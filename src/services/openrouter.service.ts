@@ -58,7 +58,7 @@ export const getAIResponse = async (
     try {
         console.log('🤖 Enviando solicitud a OpenRouter con contexto de fecha...');
         const completion = await openAIClient.chat.completions.create({
-            model: 'openai/gpt-4o',
+            model: 'google/gemini-2.5-flash',
             messages: messages,
             response_format: { type: 'json_object' }
         });
