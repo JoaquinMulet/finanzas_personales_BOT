@@ -6,7 +6,8 @@ import { getAIResponse } from '../services/openrouter.service';
 import { executeSql } from '../services/mcp.service';
 import { ChatCompletionMessageParam } from 'openai/resources';
 
-const CONVERSATION_EXPIRATION_MS = 30 * 60 * 1000; // 30 minutos
+const CONVERSATION_EXPIRATION_MS = 30 * 60 * 1000;
+const MAX_RETRY_ATTEMPTS = 2; // Límite para evitar bucles infinitos
 
 export const mainFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { endFlow }) => {
@@ -19,34 +20,53 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
         const lastInteraction = state.get('lastInteraction') || 0;
         const now = Date.now();
         let history = state.get<ChatCompletionMessageParam[]>('history') || [];
+        let attempts = state.get('attempts') || 0;
 
         if (now - lastInteraction > CONVERSATION_EXPIRATION_MS) {
-            console.log('⏳ La conversación expiró. Reiniciando el historial.');
             history = [];
+            attempts = 0;
         }
 
         console.log(`💬 Procesando mensaje: "${ctx.body}"`);
-        const aiResponse = await getAIResponse(history, ctx.body);
+        let aiResponse = await getAIResponse(history, ctx.body);
+        let finalResponse = 'Lo siento, ocurrió un error inesperado.';
 
-        let finalResponse = 'Lo siento, ocurrió un error inesperado y no pude procesar tu solicitud.';
-
-        if (aiResponse.type === 'tool') {
+        if (aiResponse.type === 'tool' && attempts < MAX_RETRY_ATTEMPTS) {
             const { tool, payload } = aiResponse.data;
-            console.log(`🤖 La IA decidió usar la herramienta: '${tool}'`);
-            console.log(`📋 Con el siguiente payload:`, JSON.stringify(payload, null, 2));
+            
+            if (tool === 'run_query_json') {
+                console.log(`🤖 La IA decidió usar la herramienta: '${tool}' (Intento #${attempts + 1})`);
+                console.log(`📋 Con el siguiente payload:`, JSON.stringify(payload, null, 2));
 
-            switch (tool) {
-                case 'run_query_json': {
-                    const toolResult = await executeSql(payload); 
+                const toolResult = await executeSql(payload);
+
+                // --- ¡AQUÍ EMPIEZA EL CICLO DE CORRECCIÓN! ---
+                if (toolResult && toolResult.error) {
+                    console.log(`❌ La herramienta falló. Devolviendo error a la IA para corrección.`);
+                    await state.update({ attempts: attempts + 1 });
+
+                    const contextForCorrection = `La herramienta 'run_query_json' falló.
+                    - Tu consulta fue: ${JSON.stringify(payload.input.sql)}
+                    - El error devuelto por la base de datos fue: "${toolResult.error}"
+                    - Por favor, analiza el error, corrige tu consulta SQL y llama a la herramienta 'run_query_json' de nuevo. NO te disculpes.`;
                     
-                    console.log('🧠 Pidiendo a la IA que interprete el resultado de la herramienta...');
+                    // Hacemos una segunda llamada a la IA con el contexto del error
+                    aiResponse = await getAIResponse(
+                        [...history, { role: 'user', content: ctx.body }],
+                        contextForCorrection
+                    );
                     
-                    // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
-                    // Accedemos a la consulta SQL a través de payload.input.sql
-                    const contextForInterpretation = `El sistema ejecutó la consulta SQL que pediste.
+                    // Si la IA vuelve a decidir usar la herramienta, el flujo se repetirá en el siguiente ciclo.
+                    // Si decide responder al usuario, se manejará más abajo.
+                } else {
+                    // Si la herramienta tuvo éxito, pedimos la interpretación final.
+                    console.log('✅ La herramienta tuvo éxito. Pidiendo a la IA que interprete el resultado.');
+                    attempts = 0; // Reiniciamos los intentos en caso de éxito
+
+                    const contextForInterpretation = `El sistema ejecutó la consulta SQL con éxito.
                     - Tu consulta fue: ${JSON.stringify(payload.input.sql)}
                     - El resultado fue: ${JSON.stringify(toolResult)}.
-                    Ahora, por favor, genera una respuesta final y amigable para el usuario en el formato JSON de 'respond_to_user'.`;
+                    Ahora, por favor, genera una respuesta final y amigable para el usuario usando 'respond_to_user'.`;
                     
                     const interpretation = await getAIResponse(
                         [...history, { role: 'user', content: ctx.body }],
@@ -56,27 +76,19 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
                     if (interpretation.type === 'tool' && interpretation.data.tool === 'respond_to_user') {
                         finalResponse = interpretation.data.payload.response;
                     } else {
-                        // Si la IA no interpreta bien, al menos confirmamos que se hizo algo.
-                        const resultText = JSON.stringify(toolResult);
-                        if (resultText && resultText !== '[]' && resultText !== '{}') {
-                           finalResponse = `Acción completada. Resultado: ${resultText}`;
-                        } else {
-                           finalResponse = "Acción completada con éxito.";
-                        }
+                        finalResponse = "Acción completada con éxito.";
                     }
-                    break;
                 }
-                
-                case 'respond_to_user':
-                    finalResponse = payload.response;
-                    break;
-
-                default:
-                    console.log(`⚠️ La IA intentó usar una herramienta desconocida: '${tool}'`);
-                    finalResponse = "Lo siento, intenté hacer algo que no está permitido.";
             }
+        }
+        
+        // Manejo de la respuesta final, ya sea por éxito, corrección o error
+        if (aiResponse.type === 'tool' && aiResponse.data.tool === 'respond_to_user') {
+            finalResponse = aiResponse.data.payload.response;
         } else if (aiResponse.type === 'text') {
             finalResponse = aiResponse.data;
+        } else if (attempts >= MAX_RETRY_ATTEMPTS) {
+            finalResponse = "Lo siento, he intentado corregir un error varias veces sin éxito. Por favor, revisa la solicitud o contacta al administrador."
         }
         
         console.log(`➡️  Enviando respuesta final: "${finalResponse}"`);
@@ -86,6 +98,6 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
             { role: 'assistant', content: finalResponse }
         ];
 
-        await state.update({ history: newHistory, lastInteraction: now });
+        await state.update({ history: newHistory, lastInteraction: now, attempts });
         await flowDynamic(finalResponse);
     });

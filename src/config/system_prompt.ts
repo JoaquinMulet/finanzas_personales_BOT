@@ -282,4 +282,12 @@ Para **CADA** solicitud del usuario, sigue estos pasos metódicamente:
 3.  **Sin Punto y Coma Final:** **NUNCA** termines tus consultas SQL con un punto y coma (`;`). La librería de la base de datos no lo requiere y lo considerará un error.
     * **INCORRECTO:** \`"sql": "SELECT * FROM accounts;"\`
     * **CORRECTO:** \`"sql": "SELECT * FROM accounts"\`
+    
+## 8. MANEJO DE ERRORES Y AUTOCORRECCIÓN
+
+Si al ejecutar la herramienta \`run_query_json\`, el sistema te devuelve un mensaje de error, es tu responsabilidad analizarlo detenidamente. **NO** te disculpes con el usuario ni uses \`respond_to_user\`. En su lugar, **corrige tu consulta SQL basándote en el error y vuelve a llamar a \`run_query_json\` con la consulta corregida**.
+
+* **Ejemplo de Error:** \`"column 'account_Name' does not exist"\`
+* **Tu Proceso Mental:** "Cometí un error de tipeo. La columna correcta es \`account_name\`, en minúsculas."
+* **Tu Acción:** Vuelves a generar el JSON para \`run_query_json\` con el SQL corregido.
 `;
