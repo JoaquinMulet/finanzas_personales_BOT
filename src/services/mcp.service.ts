@@ -26,7 +26,6 @@ class MCPService {
             ? env.mcpServerUrl
             : `https://${env.mcpServerUrl}`;
         
-        // Normalizamos la URL para que nunca tenga una barra al final.
         this.mcpServerUrl = baseUrl.replace(/\/$/, '');
     }
 
@@ -48,7 +47,7 @@ class MCPService {
                 
                 const response = await fetch(`${this.mcpServerUrl}/mcp`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify(initPayload),
                 });
 
@@ -72,8 +71,6 @@ class MCPService {
         try {
             const sessionId = await this.ensureSession();
 
-            // Este payload, con argumentos planos, es el formato estándar
-            // y coincide con la firma de la herramienta 'query_json' del servidor.
             const mcpPayload = {
                 jsonrpc: "2.0",
                 method: "tools/call",
@@ -90,20 +87,26 @@ class MCPService {
             
             const response = await fetch(endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'mcp-session-id': sessionId },
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Accept': 'application/json',
+                    'mcp-session-id': sessionId 
+                },
                 body: JSON.stringify(mcpPayload),
             });
 
             const responseText = await response.text();
             if (!response.ok) {
-                // Intentamos parsear el error incluso si el status no es 200
                 try {
                     const errorJson = JSON.parse(responseText);
                     if (errorJson.error) {
                         throw new Error(`Error reportado por el servidor MCP: ${errorJson.error.message}`);
                     }
+                    // Si no hay un error JSON específico, lanzar error general
+                    throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${responseText}`);
                 } catch (e) {
-                    // Si no es JSON, lanzamos el error de texto plano
+                    // Si el parseo falla o es otro tipo de error, lo propagamos
+                    if (e instanceof Error) throw e;
                     throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${responseText}`);
                 }
             }
@@ -120,16 +123,14 @@ class MCPService {
             console.error('❌ Fallo la comunicación con el servicio MCP:', error);
             this.sessionId = null;
             this.initializationPromise = null;
-            return { error: 'No se pudo comunicar con el servicio de base de datos.' };
+            const errorMessage = error instanceof Error ? error.message : 'No se pudo comunicar con el servicio de base de datos.';
+            return { error: errorMessage };
         }
     }
 }
 
 const mcpService = new MCPService();
 
-// --- ¡EL CAMBIO DEFINITIVO! ---
-// Usamos 'query_json' porque su firma (sql: str, row_limit: int) coincide
-// con el payload plano que le estamos enviando y con los ejemplos de los SDK oficiales.
 export const executeSql = (payload: any) => {
-    return mcpService.executeTool('query_json', payload);
+    return mcpService.executeTool('run_query_json', payload);
 };

@@ -10,10 +10,15 @@ import { ChatCompletionMessageParam } from 'openai/resources';
  * Esto nos permite saber si la IA quiere que ejecutemos una acción (tool)
  * o si simplemente está respondiendo al usuario (text).
  */
-export interface AIResponse {
-  type: 'text' | 'tool';
-  data: any;
+// Ejemplo de un tipado más estricto
+interface ToolData {
+    tool: string;
+    payload: any;
 }
+
+export type AIResponse = 
+    | { type: 'text'; data: string }
+    | { type: 'tool'; data: ToolData };
 
 /**
  * Cliente de OpenAI configurado para apuntar a la API de OpenRouter.

@@ -36,17 +36,15 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
             console.log(`📋 Con el siguiente payload:`, JSON.stringify(payload, null, 2));
 
             switch (tool) {
-                // --- ¡CORRECCIÓN FINAL! ---
-                // El nombre de la herramienta que la IA usará es 'run_query_json'.
                 case 'run_query_json': {
-                    // El payload que nos da la IA es: { sql: "...", ... }
-                    // Nuestra función executeSql está diseñada para recibir este objeto.
                     const toolResult = await executeSql(payload); 
                     
                     console.log('🧠 Pidiendo a la IA que interprete el resultado de la herramienta...');
                     
+                    // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
+                    // Accedemos a la consulta SQL a través de payload.input.sql
                     const contextForInterpretation = `El sistema ejecutó la consulta SQL que pediste.
-                    - Tu consulta fue: ${JSON.stringify(payload.sql)}
+                    - Tu consulta fue: ${JSON.stringify(payload.input.sql)}
                     - El resultado fue: ${JSON.stringify(toolResult)}.
                     Ahora, por favor, genera una respuesta final y amigable para el usuario en el formato JSON de 'respond_to_user'.`;
                     
@@ -58,12 +56,16 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
                     if (interpretation.type === 'tool' && interpretation.data.tool === 'respond_to_user') {
                         finalResponse = interpretation.data.payload.response;
                     } else {
-                        console.log('⚠️ La IA no pudo interpretar el resultado, usando respuesta genérica.');
-                        finalResponse = "Acción completada.";
+                        // Si la IA no interpreta bien, al menos confirmamos que se hizo algo.
+                        const resultText = JSON.stringify(toolResult);
+                        if (resultText && resultText !== '[]' && resultText !== '{}') {
+                           finalResponse = `Acción completada. Resultado: ${resultText}`;
+                        } else {
+                           finalResponse = "Acción completada con éxito.";
+                        }
                     }
                     break;
                 }
-                // --- FIN DE CORRECCIÓN ---
                 
                 case 'respond_to_user':
                     finalResponse = payload.response;
