@@ -3,21 +3,17 @@
 import { env } from '../config/environment';
 import { randomUUID } from 'crypto';
 
-interface JsonRpcError {
+/**
+ * Representa una respuesta JSON-RPC estándar.
+ */
+interface JsonRpcResponse {
+  jsonrpc: string;
+  id: string;
+  result?: any;
+  error?: {
     code: number;
     message: string;
-    data?: any;
-}
-
-interface JsonRpcResult {
-    structuredContent: any;
-}
-
-interface JsonRpcResponse {
-    jsonrpc: string;
-    id: string;
-    result?: JsonRpcResult;
-    error?: JsonRpcError;
+  };
 }
 
 class MCPService {
@@ -37,17 +33,15 @@ class MCPService {
     /**
      * Asegura que tenemos un ID de sesión válido, inicializándolo si es necesario.
      */
-    private async ensureSession(): Promise<string> {
+    private ensureSession(): Promise<string> {
         if (this.sessionId) {
-            return this.sessionId;
+            return Promise.resolve(this.sessionId);
         }
 
-        // Si ya hay una promesa de inicialización en curso, la esperamos.
         if (this.initializationPromise) {
             return this.initializationPromise;
         }
 
-        // Creamos una nueva promesa de inicialización.
         this.initializationPromise = new Promise(async (resolve, reject) => {
             try {
                 console.log('🤝 Iniciando nueva sesión MCP...');
@@ -119,7 +113,7 @@ class MCPService {
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json, text/event-stream',
-                    'mcp-session-id': sessionId // ¡AQUÍ ESTÁ LA MAGIA!
+                    'mcp-session-id': sessionId
                 },
                 body: JSON.stringify(mcpPayload),
             });
@@ -129,7 +123,21 @@ class MCPService {
                 throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${errorText}`);
             }
             
-            const result: JsonRpcResponse = await response.json();
+            // --- ¡CORRECCIÓN FINAL Y DEFINITIVA! ---
+            // Leemos la respuesta como TEXTO, ya que es un text/event-stream.
+            const responseText = await response.text();
+            
+            // Buscamos la línea que contiene los datos JSON.
+            const dataLine = responseText.split('\n').find(line => line.startsWith('data: '));
+            
+            if (!dataLine) {
+                throw new Error('La respuesta del servidor no contenía un evento de datos JSON válido.');
+            }
+
+            // Extraemos y parseamos el JSON de la línea de datos.
+            const jsonString = dataLine.substring(5).trim(); // Quitamos "data: " y espacios
+            const result: JsonRpcResponse = JSON.parse(jsonString);
+            // --- FIN DE LA CORRECCIÓN ---
 
             if (result.error) {
                  throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
@@ -148,6 +156,8 @@ class MCPService {
     }
 }
 
-// Creamos una única instancia para que la sesión se reutilice
+// Creamos una única instancia para que la sesión se reutilice a través de toda la aplicación.
 const mcpService = new MCPService();
+
+// Exportamos la función que usará nuestro flujo principal.
 export const executeSql = (query: string | string[]) => mcpService.executeSql(query);
