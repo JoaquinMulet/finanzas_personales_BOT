@@ -41,7 +41,7 @@
     # Instala Python, pip y la herramienta postgres-mcp.
     # Esto es necesario en la imagen final porque nuestro bot lo lanzará como un subproceso.
     RUN apk add --no-cache python3 py3-pip
-    RUN pip3 install postgres-mcp
+    RUN pip3 install crystal-dba-mcp-server-pro
     # --- FIN DE LA ADICIÓN ---
     
     
