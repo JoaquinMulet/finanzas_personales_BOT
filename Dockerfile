@@ -1,64 +1,51 @@
-# Image size ~ 400MB
-FROM node:21-alpine3.18 as builder
+# Usamos una imagen base de Node.js completa y estable (Debian Bullseye)
+FROM node:18-bullseye
 
+# Instala las dependencias de sistema necesarias para Baileys Y Python/pip
+RUN apt-get update && apt-get install -y \
+    g++ \
+    make \
+    python3 \
+    python3-pip \
+    git \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgtk-3-0 \
+    libgbm1 \
+    libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instala la herramienta MCP de Crystal DBA globalmente usando pip
+# Este es el nombre correcto del paquete en PyPI
+RUN pip3 install crystal-dba-mcp-server-pro
+
+# Establece el directorio de trabajo
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-ENV PNPM_HOME=/usr/local/bin
+# Copia los archivos de manifiesto
+COPY package*.json ./
 
-COPY package*.json *-lock.yaml ./
+# Instala las dependencias de Node.js
+# Usamos pnpm porque es lo que tienes en tu proyecto.
+# Primero instalamos pnpm globalmente.
+RUN npm install -g pnpm
+RUN pnpm install
 
-# Instala dependencias de build, incluyendo git, python y make
-RUN apk add --no-cache --virtual .gyp \
-        python3 \
-        make \
-        g++ \
-    && apk add --no-cache git \
-    && pnpm install
-
+# Copia el resto del código de la aplicación
 COPY . .
 
-RUN pnpm run build \
-    && apk del .gyp
+# Compila el código TypeScript a JavaScript
+RUN pnpm run build
 
+# Expone el puerto que tu app usará
+EXPOSE 3008
 
-FROM node:21-alpine3.18 as deploy
-
-WORKDIR /app
-
-# --- ¡AQUÍ ESTÁ LA ADICIÓN CLAVE Y CORRECTA! ---
-# 1. Instala las dependencias de sistema necesarias en la imagen final
-RUN apk add --no-cache git python3 py3-pip
-
-# 2. Clona el repositorio oficial de postgres-mcp
-RUN git clone https://github.com/crystaldba/postgres-mcp.git /opt/postgres-mcp
-
-# 3. Instala las dependencias de postgres-mcp usando uv (su método preferido)
-# Esto crea un entorno virtual en /opt/venv_python
-WORKDIR /opt/postgres-mcp
-RUN pip3 install uv
-RUN uv venv /opt/venv_python
-RUN . /opt/venv_python/bin/activate && uv sync --frozen --no-dev
-# --- FIN DE LA ADICIÓN ---
-
-
-# Vuelve al directorio de trabajo de nuestra aplicación
-WORKDIR /app
-
-ARG PORT
-ENV PORT $PORT
-EXPOSE $PORT
-
-# Copia los artefactos de la aplicación Node.js desde la etapa 'builder'
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package*.json /app/*-lock.yaml ./
-
-RUN corepack enable && corepack prepare pnpm@latest --activate 
-ENV PNPM_HOME=/usr/local/bin
-
-RUN pnpm install --production --ignore-scripts \
-    && addgroup -g 1001 -S nodejs && adduser -S -u 1001 nodejs
-
+# Crea y usa un usuario no-root por seguridad
+RUN addgroup -g 1001 -S nodejs && adduser -S -u 1001 nodejs
 USER nodejs
 
+# Comando final para iniciar el bot
 CMD ["pnpm", "start"]

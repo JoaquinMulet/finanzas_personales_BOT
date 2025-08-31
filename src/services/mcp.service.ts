@@ -7,46 +7,28 @@ import { env } from '../config/environment';
 
 class MCPService {
     private client: Client | null = null;
-    
-    private isInitializing: boolean = false;
     private initializationPromise: Promise<void> | null = null;
 
-    constructor() {
-        // La inicialización se llama bajo demanda.
-    }
+    private initialize(): Promise<void> {
+        if (this.initializationPromise) {
+            return this.initializationPromise;
+        }
 
-    // ¡CORRECCIÓN! Eliminamos el constructor `new Promise` y hacemos
-    // que el método en sí sea el gestor de la promesa.
-    private async initialize(): Promise<void> {
-        if (this.client) return;
-        if (this.isInitializing) return this.initializationPromise!;
-
-        // Marcamos que estamos inicializando y asignamos la promesa directamente
-        // a la ejecución de una nueva función asíncrona.
-        this.isInitializing = true;
-        this.initializationPromise = (async () => {
+        this.initializationPromise = new Promise(async (resolve, reject) => {
             try {
-                console.log('🚀 Lanzando el proceso del servidor postgres-mcp...');
+                console.log('🚀 Lanzando el proceso del servidor postgres-mcp (Crystal DBA)...');
 
-                const command = '/opt/venv_python/bin/postgres-mcp';
+                // El comando está instalado globalmente por pip
+                const command = 'postgres-mcp';
+                // Pasamos la DATABASE_URL como un solo argumento
                 const args = [
                     '--access-mode=unrestricted',
-                    env.db.host,
-                    '-p', env.db.port.toString(),
-                    '-U', env.db.user,
-                    '-d', env.db.database
+                    process.env.DATABASE_URL!
                 ];
 
                 const transport = new StdioClientTransport({
                     command: command,
                     args: args,
-                    env: { ...process.env, PGPASSWORD: env.db.password },
-                    stderr: 'pipe' // Pipe stderr to capture logs
-                });
-
-                // Add debugging for the MCP server's error stream
-                transport.stderr?.on('data', (data) => {
-                    console.error(`[MCP-ERROR-STREAM]: ${data.toString()}`);
                 });
 
                 this.client = new Client({ name: "fp-agent-client", version: "1.0.0" });
@@ -55,36 +37,29 @@ class MCPService {
                 const { tools } = await this.client.listTools();
                 console.log(`✅ Conectado al servidor MCP local con herramientas: ${tools.map(t => t.name).join(', ')}`);
 
-                transport.onclose = () => {
-                    console.log('MCP transport closed');
+                this.client.onclose = () => {
+                    console.log(`MCP server process exited`);
                     this.client = null;
-                    this.isInitializing = false;
-                    this.initializationPromise = null; // Reseteamos la promesa
+                    this.initializationPromise = null;
                 };
+                
+                resolve();
 
             } catch (error) {
                 console.error('❌ Fallo catastrófico al iniciar la sesión MCP:', error);
-                // Si falla, reseteamos el estado para permitir un nuevo intento.
-                this.isInitializing = false;
                 this.initializationPromise = null;
-                // Re-lanzamos el error para que la promesa se rechace
-                throw error; 
+                reject(error);
             }
-        })();
-        
-        // Esperamos a que la promesa de inicialización se complete
-        await this.initializationPromise;
-        // Una vez completada (o si falla), reseteamos el estado de "inicializando"
-        this.isInitializing = false;
+        });
+        return this.initializationPromise;
     }
 
     public async executeSql(query: string | string[]): Promise<any> {
-        // La lógica aquí no necesita cambiar. El await a initialize() ahora es más seguro.
         if (!this.client) {
             await this.initialize();
-            if (!this.client) {
-                 throw new Error('El cliente MCP no se pudo inicializar.');
-            }
+        }
+        if (!this.client) {
+            throw new Error('El cliente MCP no se pudo inicializar.');
         }
 
         try {
@@ -108,20 +83,7 @@ class MCPService {
             return { error: 'Hubo un error al ejecutar la consulta SQL.' };
         }
     }
-    
-    public async close() {
-        if (this.client) {
-            console.log('🔌 Disconnecting the MCP client...');
-            await this.client.close();
-            this.client = null;
-        }
-    }
 }
 
 const mcpService = new MCPService();
 export const executeSql = (query: string | string[]) => mcpService.executeSql(query);
-
-process.on('SIGINT', () => {
-  mcpService.close();
-  process.exit();
-});
