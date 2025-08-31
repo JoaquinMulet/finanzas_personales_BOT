@@ -1,15 +1,13 @@
-# Usamos una imagen base de Node.js completa y estable (Debian Bullseye)
-FROM node:18-bullseye
+# ¡CORRECCIÓN CLAVE! Usamos una base más moderna (Debian Bookworm) que SÍ tiene Python 3.12
+FROM node:18-bookworm
 
-# --- ¡AQUÍ ESTÁ LA CORRECCIÓN CLAVE! ---
-# 1. Instala las dependencias de sistema necesarias.
-# 2. En lugar de 'python3', instalamos explícitamente 'python3.12'.
-# 3. También instalamos 'python3.12-venv' para que 'uv' funcione correctamente.
+# Instala las dependencias de sistema. Ahora 'python3' se referirá a una versión moderna.
+# 'python3-venv' es el paquete correcto para los entornos virtuales.
 RUN apt-get update && apt-get install -y \
     g++ \
     make \
-    python3.12 \
-    python3.12-venv \
+    python3 \
+    python3-venv \
     python3-pip \
     git \
     libnss3 \
@@ -26,8 +24,7 @@ RUN apt-get update && apt-get install -y \
 # 1. Instala 'uv' usando pip.
 RUN pip3 install uv
 
-# 2. Usa 'uv' para instalar el paquete 'postgres-mcp' globalmente.
-#    'uv' ahora usará la versión de Python 3.12 que acabamos de instalar.
+# 2. Usa 'uv' para instalar el paquete 'postgres-mcp' globalmente en el sistema.
 RUN uv pip install postgres-mcp --system
 # --- Fin de la instalación de MCP ---
 
