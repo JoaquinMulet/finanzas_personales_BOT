@@ -85,7 +85,7 @@ class MCPService {
             console.log(`➡️  Enviando Payload a MCP en ${this.mcpServerUrl}mcp:`);
             console.log(JSON.stringify(mcpPayload, null, 2));
             
-            const response = await fetch(`${this.mcpServerUrl}/mcp`, {
+            const response = await fetch(`${this.mcpServerUrl}mcp`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'mcp-session-id': sessionId },
                 body: JSON.stringify(mcpPayload),
