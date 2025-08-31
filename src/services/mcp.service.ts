@@ -36,8 +36,8 @@ export const executeSql = async (query: string | string[]): Promise<any> => {
     console.log(`➡️  Enviando llamada a herramienta MCP: ${JSON.stringify(mcpPayload).substring(0, 150)}...`);
 
     try {
-        // CORRECCIÓN: Apuntamos a la URL base del servidor, no a un endpoint específico.
-        const response = await fetch(env.mcpServerUrl, {
+        // CORRECCIÓN FINAL: Añadimos "/sse" al final de la URL del servidor.
+        const response = await fetch(`${env.mcpServerUrl}/sse`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(mcpPayload),
