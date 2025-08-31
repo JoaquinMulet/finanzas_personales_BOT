@@ -1,14 +1,15 @@
-# ¡CORRECCIÓN CLAVE! Usamos una base más moderna (Debian Bookworm) que SÍ tiene Python 3.12
+# Usamos una base más moderna (Debian Bookworm) que SÍ tiene Python 3.12
 FROM node:18-bookworm
 
-# Instala las dependencias de sistema. Ahora 'python3' se referirá a una versión moderna.
-# 'python3-venv' es el paquete correcto para los entornos virtuales.
+# Instala las dependencias de sistema.
+# Añadimos 'pipx' a la lista.
 RUN apt-get update && apt-get install -y \
     g++ \
     make \
     python3 \
     python3-venv \
     python3-pip \
+    pipx \
     git \
     libnss3 \
     libatk1.0-0 \
@@ -20,12 +21,16 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Instalación de la Herramienta MCP con UV ---
-# 1. Instala 'uv' usando pip.
-RUN pip3 install uv
+# Asegurarse de que las aplicaciones instaladas con pipx estén en la RUTA del sistema
+RUN pipx ensurepath
 
-# 2. Usa 'uv' para instalar el paquete 'postgres-mcp' globalmente en el sistema.
-RUN uv pip install postgres-mcp --system
+# --- Instalación de la Herramienta MCP con pipx (Método Correcto para PEP 668) ---
+# Usamos pipx para instalar 'uv' de forma segura.
+RUN pipx install uv
+
+# Usamos pipx para instalar 'postgres-mcp' de forma segura.
+# pipx manejará el entorno virtual por nosotros.
+RUN pipx run uv pip install postgres-mcp
 # --- Fin de la instalación de MCP ---
 
 
@@ -55,4 +60,5 @@ RUN addgroup -g 1001 -S nodejs && adduser -S -u 1001 nodejs
 USER nodejs
 
 # Comando final para iniciar el bot
-CMD ["pnpm", "start"]
+# Tenemos que asegurarnos de que la ruta de pipx esté disponible
+CMD ["/bin/sh", "-c", "export PATH=$PATH:/root/.local/bin && pnpm start"]
