@@ -20,11 +20,10 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
         const lastInteraction = state.get('lastInteraction') || 0;
         const now = Date.now();
         let history = state.get<ChatCompletionMessageParam[]>('history') || [];
-        let attempts = state.get('attempts') || 0;
+        let attempts = 0; // Se reinicia en cada mensaje nuevo
 
         if (now - lastInteraction > CONVERSATION_EXPIRATION_MS) {
             history = [];
-            attempts = 0;
         }
 
         console.log(`💬 Procesando mensaje: "${ctx.body}"`);
@@ -55,7 +54,7 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
                     [...history, { role: 'user', content: ctx.body }],
                     contextForCorrection
                 );
-                // El bucle continuará con la nueva respuesta de la IA
+                // El bucle continuará con la nueva respuesta de la IA en la siguiente iteración
             } else {
                 console.log('✅ La herramienta tuvo éxito. Pidiendo a la IA que interprete el resultado.');
                 const contextForInterpretation = `El sistema ejecutó la consulta SQL con éxito.
@@ -63,7 +62,7 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
                 - El resultado fue: ${JSON.stringify(toolResult)}.
                 Ahora, genera una respuesta final y amigable para el usuario usando 'respond_to_user'.`;
                 
-                aiResponse = await getAIResponse( // Sobrescribimos aiResponse con la interpretación final
+                aiResponse = await getAIResponse(
                     [...history, { role: 'user', content: ctx.body }],
                     contextForInterpretation
                 );
@@ -87,6 +86,6 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
             { role: 'assistant', content: finalResponse }
         ];
 
-        await state.update({ history: newHistory, lastInteraction: now, attempts: 0 }); // Reiniciamos intentos al final
+        await state.update({ history: newHistory, lastInteraction: now });
         await flowDynamic(finalResponse);
     });
