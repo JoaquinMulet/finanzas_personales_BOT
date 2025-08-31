@@ -19,8 +19,10 @@ class MCPService {
                 try {
                     console.log('🚀 Lanzando el proceso del servidor postgres-mcp (Crystal DBA)...');
 
-                    const command = 'postgres-mcp';
+                    const command = 'pipx';
                     const args = [
+                        'run',
+                        'postgres-mcp', // El comando a ejecutar
                         '--access-mode=unrestricted',
                         process.env.DATABASE_URL!
                     ];
