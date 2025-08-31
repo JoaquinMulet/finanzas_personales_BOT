@@ -14,42 +14,42 @@ class MCPService {
             return this.initializationPromise;
         }
 
-        this.initializationPromise = new Promise(async (resolve, reject) => {
-            try {
-                console.log('🚀 Lanzando el proceso del servidor postgres-mcp (Crystal DBA)...');
+        this.initializationPromise = new Promise((resolve, reject) => {
+            (async () => {
+                try {
+                    console.log('🚀 Lanzando el proceso del servidor postgres-mcp (Crystal DBA)...');
 
-                // El comando está instalado globalmente por pip
-                const command = 'postgres-mcp';
-                // Pasamos la DATABASE_URL como un solo argumento
-                const args = [
-                    '--access-mode=unrestricted',
-                    process.env.DATABASE_URL!
-                ];
+                    const command = 'postgres-mcp';
+                    const args = [
+                        '--access-mode=unrestricted',
+                        process.env.DATABASE_URL!
+                    ];
 
-                const transport = new StdioClientTransport({
-                    command: command,
-                    args: args,
-                });
+                    const transport = new StdioClientTransport({
+                        command: command,
+                        args: args,
+                    });
 
-                this.client = new Client({ name: "fp-agent-client", version: "1.0.0" });
-                await this.client.connect(transport);
-                
-                const { tools } = await this.client.listTools();
-                console.log(`✅ Conectado al servidor MCP local con herramientas: ${tools.map(t => t.name).join(', ')}`);
+                    this.client = new Client({ name: "fp-agent-client", version: "1.0.0" });
+                    await this.client.connect(transport);
 
-                this.client.onclose = () => {
-                    console.log(`MCP server process exited`);
-                    this.client = null;
+                    const { tools } = await this.client.listTools();
+                    console.log(`✅ Conectado al servidor MCP local con herramientas: ${tools.map(t => t.name).join(', ')}`);
+
+                    this.client.onclose = () => {
+                        console.log(`MCP server process exited`);
+                        this.client = null;
+                        this.initializationPromise = null;
+                    };
+
+                    resolve();
+
+                } catch (error) {
+                    console.error('❌ Fallo catastrófico al iniciar la sesión MCP:', error);
                     this.initializationPromise = null;
-                };
-                
-                resolve();
-
-            } catch (error) {
-                console.error('❌ Fallo catastrófico al iniciar la sesión MCP:', error);
-                this.initializationPromise = null;
-                reject(error);
-            }
+                    reject(error);
+                }
+            })();
         });
         return this.initializationPromise;
     }
