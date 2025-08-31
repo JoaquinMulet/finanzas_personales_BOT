@@ -42,7 +42,7 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
 
             // ¡CORREGIDO! El switch ahora solo maneja las herramientas válidas.
             switch (tool) {
-                case 'execute_sql':
+                case 'execute_sql': {
                     const toolResult = await executeSql(payload.query);
 
                     // --- PASO 2.1 (MEJORA CLAVE): IA INTERPRETA EL RESULTADO ---
@@ -70,6 +70,7 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
                         finalResponse = "Acción completada."; // Fallback de seguridad
                     }
                     break;
+                }
                 
                 case 'respond_to_user':
                     // La IA decidió que solo necesita hablar con el usuario.
