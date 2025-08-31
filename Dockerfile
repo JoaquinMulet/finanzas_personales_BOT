@@ -30,7 +30,7 @@ RUN pipx install uv
 
 # Usamos pipx para instalar 'postgres-mcp' de forma segura.
 # pipx manejará el entorno virtual por nosotros.
-RUN pipx run uv pip install postgres-mcp
+RUN pipx install postgres-mcp
 # --- Fin de la instalación de MCP ---
 
 
