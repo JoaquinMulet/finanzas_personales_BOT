@@ -1,59 +1,40 @@
-# Usamos una base más moderna (Debian Bookworm) que SÍ tiene Python 3.12
-FROM node:18-bookworm
+# Image size ~ 400MB
+FROM node:21-alpine3.18 as builder
 
-# Instala las dependencias de sistema.
-# Añadimos 'pipx' a la lista.
-RUN apt-get update && apt-get install -y \
-    g++ \
-    make \
-    python3 \
-    python3-venv \
-    python3-pip \
-    pipx \
-    git \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libgtk-3-0 \
-    libgbm1 \
-    libasound2 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Asegurarse de que las aplicaciones instaladas con pipx estén en la RUTA del sistema
-RUN pipx ensurepath
-
-# Usamos pipx para instalar 'postgres-mcp' de forma segura.
-# pipx manejará el entorno virtual por nosotros.
-RUN pipx install postgres-mcp
-
-
-# Establece el directorio de trabajo para la aplicación de Node.js
 WORKDIR /app
 
-# Copia los archivos de manifiesto
-COPY package*.json ./
+RUN corepack enable && corepack prepare pnpm@latest --activate
+ENV PNPM_HOME=/usr/local/bin
 
-# Instala pnpm globalmente
-RUN npm install -g pnpm
-
-# Instala las dependencias de Node.js
-RUN pnpm install
-
-# Copia el resto del código de la aplicación
 COPY . .
 
-# Compila el código TypeScript a JavaScript
-RUN pnpm run build
+COPY package*.json *-lock.yaml ./
 
-# Expone el puerto que tu app usará
-EXPOSE 3008
+RUN apk add --no-cache --virtual .gyp \
+        python3 \
+        make \
+        g++ \
+    && apk add --no-cache git \
+    && pnpm install && pnpm run build \
+    && apk del .gyp
 
-# Crea y usa un usuario no-root por seguridad
-RUN addgroup -g 1001 -S nodejs && adduser -S -u 1001 nodejs
-USER nodejs
+FROM node:21-alpine3.18 as deploy
 
-# Comando final para iniciar el bot
-# Tenemos que asegurarnos de que la ruta de pipx esté disponible
-CMD ["/bin/sh", "-c", "export PATH=$PATH:/root/.local/bin && pnpm start"]
+WORKDIR /app
+
+ARG PORT
+ENV PORT $PORT
+EXPOSE $PORT
+
+COPY --from=builder /app/assets ./assets
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/*.json /app/*-lock.yaml ./
+
+RUN corepack enable && corepack prepare pnpm@latest --activate 
+ENV PNPM_HOME=/usr/local/bin
+
+RUN npm cache clean --force && pnpm install --production --ignore-scripts \
+    && addgroup -g 1001 -S nodejs && adduser -S -u 1001 nodejs \
+    && rm -rf $PNPM_HOME/.npm $PNPM_HOME/.node-gyp
+
+CMD ["npm", "start"]
