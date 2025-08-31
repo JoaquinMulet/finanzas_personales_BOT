@@ -114,7 +114,7 @@ class MCPService {
 
             console.log(`➡️  Enviando llamada a herramienta MCP: ${mcpPayload.method}`);
             
-            const response = await fetch(`${this.mcpServerUrl}/mcp`, {
+            const response = await fetch(`${this.mcpServerUrl}mcp`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
