@@ -103,10 +103,11 @@ class MCPService {
         }
     }
     
-    public close() {
-        if (this.serverProcess) {
-            console.log('🔌 Terminando el proceso del servidor MCP...');
-            this.serverProcess.kill();
+    public async close() {
+        if (this.client) {
+            console.log('🔌 Disconnecting the MCP client...');
+            await this.client.close();
+            this.client = null;
         }
     }
 }
