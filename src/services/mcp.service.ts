@@ -19,10 +19,19 @@ interface MCPToolResponse {
  * @returns Una promesa que resuelve con los datos de la consulta o un objeto de error.
  */
 export const executeSql = async (query: string | string[]): Promise<any> => {
+    let mcpServerUrl = env.mcpServerUrl;
     // Validamos que la URL del servidor MCP esté configurada
-    if (!env.mcpServerUrl) {
+    // 1. Verificamos si la URL base está configurada.
+    if (!mcpServerUrl) {
         console.error('❌ La URL del servidor MCP no está configurada en las variables de entorno.');
         return { error: 'La conexión con la base de datos no está configurada.' };
+    }
+
+    // 2. Nos aseguramos de que la URL tenga el protocolo https://.
+    // Esto nos protege si Railway (o cualquier sistema) lo elimina.
+    if (!mcpServerUrl.startsWith('http://') && !mcpServerUrl.startsWith('https://')) {
+        console.log(`⚠️ La URL del MCP no tiene protocolo. Añadiendo https:// por defecto.`);
+        mcpServerUrl = `https://${mcpServerUrl}`;
     }
     
     // El cuerpo de la solicitud debe especificar la herramienta a usar
