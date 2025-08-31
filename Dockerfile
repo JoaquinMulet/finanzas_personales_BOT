@@ -61,4 +61,4 @@ RUN pnpm install --production --ignore-scripts \
 
 USER nodejs
 
-CMD ["npm", "start"]
+CMD ["pnpm", "start"]
