@@ -60,7 +60,13 @@ export const executeSql = async (query: string | string[]): Promise<any> => {
     try {
         const response = await fetch(finalUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            // --- ¡AQUÍ ESTÁ LA CORRECCIÓN FINAL! ---
+            headers: { 
+                'Content-Type': 'application/json',
+                // Le decimos al servidor que aceptamos ambos tipos de respuesta.
+                'Accept': 'application/json, text/event-stream' 
+            },
+            // --- FIN DE LA CORRECCIÓN ---
             body: JSON.stringify(mcpPayload),
         });
 
