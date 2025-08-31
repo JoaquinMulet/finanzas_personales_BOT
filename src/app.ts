@@ -15,7 +15,7 @@ const main = async () => {
         database: adapterDB,
     })
 
-    httpServer(parseInt(env.port as string, 10))
+    httpServer(env.port)
     console.log(`🤖 Bot de WhatsApp listo en el puerto ${env.port}`)
     console.log('🔒 Escuchando únicamente los mensajes de:', env.myPhoneNumber)
 }
