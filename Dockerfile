@@ -1,7 +1,7 @@
 # Usamos una imagen base de Node.js completa y estable (Debian Bullseye)
 FROM node:18-bullseye
 
-# Instala las dependencias de sistema necesarias para Baileys Y Python/pip
+# Instala las dependencias de sistema necesarias para Baileys, Python y las herramientas de compilación
 RUN apt-get update && apt-get install -y \
     g++ \
     make \
@@ -18,20 +18,25 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Instala la herramienta MCP de Crystal DBA globalmente usando pip
-# Este es el nombre correcto del paquete en PyPI
-RUN pip3 install crystal-dba-mcp-server-pro
+# --- Instalación de la Herramienta MCP con UV (Método Recomendado por el README) ---
+# 1. Instala 'uv' usando pip
+RUN pip3 install uv
 
-# Establece el directorio de trabajo
+# 2. Usa 'uv' para instalar el paquete 'postgres-mcp', tal como indica la documentación.
+RUN uv pip install postgres-mcp
+# --- Fin de la instalación de MCP ---
+
+
+# Establece el directorio de trabajo para la aplicación de Node.js
 WORKDIR /app
 
 # Copia los archivos de manifiesto
 COPY package*.json ./
 
-# Instala las dependencias de Node.js
-# Usamos pnpm porque es lo que tienes en tu proyecto.
-# Primero instalamos pnpm globalmente.
+# Instala pnpm globalmente
 RUN npm install -g pnpm
+
+# Instala las dependencias de Node.js
 RUN pnpm install
 
 # Copia el resto del código de la aplicación
