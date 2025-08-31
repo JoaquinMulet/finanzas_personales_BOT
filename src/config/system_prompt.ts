@@ -50,22 +50,22 @@ Esta es la estructura completa y detallada de la base de datos. Debes usarla par
 
 | Tabla | Columna | Tipo | Instrucciones |
 | :--- | :--- | :--- | :--- |
-| **\`Accounts\`** | \`account_id\` | \`UUID\` | (PK) |
+| **\`accounts\`** | \`account_id\` | \`UUID\` | (PK) |
 | | \`account_name\` | \`String\` | Clave para búsquedas con \`ILIKE\`. **Debe ser único.** |
 | | \`account_type\` | \`Enum('Asset', 'Liability')\`| CRÍTICO. Preguntar si no es obvio. |
 | | \`currency_code\` | \`String\` | Código ISO (ej. CLP, USD). |
 | | \`initial_balance\` | \`Numeric\` | Saldo inicial de la cuenta. |
-| **\`Categories\`** | \`category_id\` | \`Integer\` | (PK) |
+| **\`categories\`** | \`category_id\` | \`Integer\` | (PK) |
 | | \`category_name\` | \`String\` | Clave para búsquedas con \`ILIKE\`. **Debe ser único.** |
 | | \`parent_category_id\`| \`Integer\` | Para anidar categorías. |
 | | \`purpose_type\` | \`Enum('Need', 'Want', 'Savings/Goal')\` | Para clasificar el propósito del gasto. |
 | | \`nature_type\` | \`Enum('Fixed', 'Variable')\` | Para clasificar la naturaleza del gasto. |
-| **\`Merchants\`** | \`merchant_id\` | \`UUID\` | (PK) |
+| **\`merchants\`** | \`merchant_id\` | \`UUID\` | (PK) |
 | | \`merchant_name\` | \`String\` | Clave para búsquedas con \`ILIKE\`. **Debe ser único.** |
 | | \`default_category_id\`| \`Integer\` | Categoría por defecto. |
-| **\`Tags\`** | \`tag_id\` | \`Integer\` | (PK) |
+| **\`tags\`** | \`tag_id\` | \`Integer\` | (PK) |
 | | \`tag_name\` | \`String\` | Etiqueta para agrupar por eventos (ej. "Vacaciones 2025"). **Debe ser único.** |
-| **\`Transactions\`** | \`transaction_id\` | \`UUID\` | (PK) Debes generar un UUID. |
+| **\`transactions\`** | \`transaction_id\` | \`UUID\` | (PK) Debes generar un UUID. |
 | | \`account_id\` | \`UUID\` | MANDATORIO. |
 | | \`merchant_id\` | \`UUID\` | Opcional pero recomendado. |
 | | \`category_id\` | \`Integer\` | MANDATORIO (a menos que sea un split, donde es NULL). |
@@ -76,15 +76,15 @@ Esta es la estructura completa y detallada de la base de datos. Debes usarla par
 | | \`status\` | \`Enum('ACTIVE', 'VOID', 'SUPERSEDED')\`| SIEMPRE 'ACTIVE' para nuevos registros. |
 | | \`revises_transaction_id\`| \`UUID\` | Apunta al ID de la transacción \`SUPERSEDED\`. |
 | | \`related_transaction_id\`| \`UUID\` | Vincula las dos partes de una transferencia. |
-| **\`Transaction_Splits\`**| \`split_id\` | \`UUID\` | (PK) Debes generar un UUID. |
+| **\`transaction_splits\`**| \`split_id\` | \`UUID\` | (PK) Debes generar un UUID. |
 | | \`transaction_id\` | \`UUID\` | MANDATORIO. Apunta a la transacción "madre". |
 | | \`category_id\` | \`Integer\` | MANDATORIO. |
 | | \`amount\` | \`Numeric\` | MANDATORIO. |
-| **\`Goals\`** | \`goal_id\` | \`UUID\` | (PK) |
+| **\`goals\`** | \`goal_id\` | \`UUID\` | (PK) |
 | | \`goal_name\` | \`String\` | Nombre de la meta (ej. "Fondo de Emergencia"). |
 | | \`target_amount\` | \`Numeric\` | Monto objetivo de la meta. |
 | | \`target_date\` | \`Date\` | Fecha límite opcional para la meta. |
-| **\`Asset_Valuation_History\`**| \`valuation_id\`| \`UUID\`| (PK) |
+| **\`asset_valuation_history\`**| \`valuation_id\`| \`UUID\`| (PK) |
 | | \`account_id\`| \`UUID\`| (FK) Apunta a la cuenta de tipo 'Asset' que se está valorando. |
 | | \`valuation_date\`| \`Date\`| Fecha en la que se registra el nuevo valor del activo. |
 | | \`value\`| \`Numeric\`| El valor monetario del activo en esa fecha. |
@@ -107,7 +107,7 @@ Esta es la estructura completa y detallada de la base de datos. Debes usarla par
 
 | Tabla | Columna | Tipo | Instrucciones |
 | :--- | :--- | :--- | :--- |
-| **\`Monthly_Category_Summary\`**| \`year\`| \`Integer\`| (PK) Año del resumen. |
+| **\`monthly_category_summary\`**| \`year\`| \`Integer\`| (PK) Año del resumen. |
 | | \`month\`| \`Integer\`| (PK) Mes del resumen (1-12). |
 | | \`category_id\`| \`Integer\`| (PK, FK) ID de la categoría. |
 | | \`total_amount\`| \`Numeric\`| Suma total para esa categoría en ese mes. |
