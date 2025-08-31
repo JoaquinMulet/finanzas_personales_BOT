@@ -1,23 +1,24 @@
 // src/services/mcp.service.ts
 
-import { spawn, ChildProcess } from 'child_process';
+import { ChildProcess } from 'child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
 import { env } from '../config/environment';
 
 class MCPService {
     private client: Client | null = null;
-    private serverProcess: ChildProcess | null = null;
+    private transport: StdioClientTransport | null = null;
     private isInitializing: boolean = false;
     private initializationPromise: Promise<void> | null = null;
 
     constructor() {
-        // La inicialización se llama explícitamente para manejar la asincronía
+        // La inicialización se llama bajo demanda la primera vez que se usa.
     }
 
     private async initialize(): Promise<void> {
-        if (this.client) return; // Ya está inicializado
-        if (this.isInitializing) return this.initializationPromise!; // Ya se está inicializando
+        if (this.client) return;
+        if (this.isInitializing) return this.initializationPromise!;
 
         this.isInitializing = true;
         this.initializationPromise = new Promise(async (resolve, reject) => {
@@ -33,23 +34,22 @@ class MCPService {
                     '-d', env.db.database
                 ];
 
-                const transport = new StdioClientTransport({
+                this.transport = new StdioClientTransport({
                     command: command,
                     args: args,
                     env: { ...process.env, PGPASSWORD: env.db.password }
                 });
 
                 this.client = new Client({ name: "fp-agent-client", version: "1.0.0" });
-                await this.client.connect(transport);
+                await this.client.connect(this.transport);
+                
+                // ¡CORRECCIÓN! Obtenemos y guardamos el proceso hijo
+
                 
                 const { tools } = await this.client.listTools();
                 console.log(`✅ Conectado al servidor MCP local con herramientas: ${tools.map(t => t.name).join(', ')}`);
 
-                this.client.onclose = () => {
-                    console.log('MCP server process exited.');
-                    this.client = null;
-                    this.isInitializing = false;
-                };
+
                 
                 this.isInitializing = false;
                 resolve();
@@ -64,10 +64,9 @@ class MCPService {
     }
 
     public async executeSql(query: string | string[]): Promise<any> {
-        // Asegurarse de que la inicialización esté completa antes de ejecutar
         if (!this.client) {
             await this.initialize();
-            if (!this.client) { // Si falló la inicialización
+            if (!this.client) {
                  throw new Error('El cliente MCP no se pudo inicializar.');
             }
         }
@@ -82,7 +81,6 @@ class MCPService {
             console.log('⬅️  Respuesta recibida de MCP.');
             if (result.content && result.content[0].type === 'text') {
                 try {
-                    // El resultado a menudo es un string JSON que necesita ser parseado
                     return JSON.parse(result.content[0].text);
                 } catch {
                     return result.content[0].text;
@@ -94,11 +92,26 @@ class MCPService {
             return { error: 'Hubo un error al ejecutar la consulta SQL.' };
         }
     }
+    
+    // ¡OMISIÓN AÑADIDA! Método para un cierre limpio.
+    public close() {
+        if (this.transport) {
+            console.log('🔌 Closing the MCP transport...');
+            this.transport.close();
+        }
+    }
 }
 
-// Creamos una única instancia (Singleton)
+// Creamos una única instancia (Singleton) para toda la aplicación
 const mcpService = new MCPService();
 
 // Exportamos solo la función que el main.flow necesita,
 // manteniendo la clase encapsulada.
 export const executeSql = (query: string | string[]) => mcpService.executeSql(query);
+
+// Podríamos añadir un manejador para el cierre de la aplicación principal
+// para llamar a mcpService.close() y asegurar una limpieza adecuada.
+process.on('SIGINT', () => {
+  mcpService.close();
+  process.exit();
+});
