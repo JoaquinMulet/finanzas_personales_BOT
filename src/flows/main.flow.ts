@@ -2,12 +2,12 @@
 
 import { addKeyword, EVENTS } from '@builderbot/bot';
 import { env } from '../config/environment';
-import { getAIResponse } from '../services/openrouter.service';
+import { getAIResponse, AIResponse } from '../services/openrouter.service';
 import { executeSql } from '../services/mcp.service';
 import { ChatCompletionMessageParam } from 'openai/resources';
 
 const CONVERSATION_EXPIRATION_MS = 30 * 60 * 1000;
-const MAX_RETRY_ATTEMPTS = 2; // Límite para evitar bucles infinitos
+const MAX_RETRY_ATTEMPTS = 2;
 
 export const mainFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { endFlow }) => {
@@ -28,61 +28,50 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
         }
 
         console.log(`💬 Procesando mensaje: "${ctx.body}"`);
-        let aiResponse = await getAIResponse(history, ctx.body);
-        let finalResponse = 'Lo siento, ocurrió un error inesperado.';
+        let aiResponse: AIResponse = await getAIResponse(history, ctx.body);
+        let finalResponse = 'Lo siento, ocurrió un error inesperado y no pude procesar tu solicitud.';
 
-        if (aiResponse.type === 'tool' && attempts < MAX_RETRY_ATTEMPTS) {
-            const { tool, payload } = aiResponse.data;
-            
-            if (tool === 'run_query_json') {
-                console.log(`🤖 La IA decidió usar la herramienta: '${tool}' (Intento #${attempts + 1})`);
-                console.log(`📋 Con el siguiente payload:`, JSON.stringify(payload, null, 2));
+        // --- BUCLE DE AUTOCORRECCIÓN ---
+        while (
+            aiResponse.type === 'tool' &&
+            aiResponse.data.tool === 'run_query_json' &&
+            attempts < MAX_RETRY_ATTEMPTS
+        ) {
+            console.log(`🤖 La IA decidió usar la herramienta: 'run_query_json' (Intento #${attempts + 1})`);
+            console.log(`📋 Con el siguiente payload:`, JSON.stringify(aiResponse.data.payload, null, 2));
 
-                const toolResult = await executeSql(payload);
+            const toolResult = await executeSql(aiResponse.data.payload);
 
-                // --- ¡AQUÍ EMPIEZA EL CICLO DE CORRECCIÓN! ---
-                if (toolResult && toolResult.error) {
-                    console.log(`❌ La herramienta falló. Devolviendo error a la IA para corrección.`);
-                    await state.update({ attempts: attempts + 1 });
-
-                    const contextForCorrection = `La herramienta 'run_query_json' falló.
-                    - Tu consulta fue: ${JSON.stringify(payload.input.sql)}
-                    - El error devuelto por la base de datos fue: "${toolResult.error}"
-                    - Por favor, analiza el error, corrige tu consulta SQL y llama a la herramienta 'run_query_json' de nuevo. NO te disculpes.`;
-                    
-                    // Hacemos una segunda llamada a la IA con el contexto del error
-                    aiResponse = await getAIResponse(
-                        [...history, { role: 'user', content: ctx.body }],
-                        contextForCorrection
-                    );
-                    
-                    // Si la IA vuelve a decidir usar la herramienta, el flujo se repetirá en el siguiente ciclo.
-                    // Si decide responder al usuario, se manejará más abajo.
-                } else {
-                    // Si la herramienta tuvo éxito, pedimos la interpretación final.
-                    console.log('✅ La herramienta tuvo éxito. Pidiendo a la IA que interprete el resultado.');
-                    attempts = 0; // Reiniciamos los intentos en caso de éxito
-
-                    const contextForInterpretation = `El sistema ejecutó la consulta SQL con éxito.
-                    - Tu consulta fue: ${JSON.stringify(payload.input.sql)}
-                    - El resultado fue: ${JSON.stringify(toolResult)}.
-                    Ahora, por favor, genera una respuesta final y amigable para el usuario usando 'respond_to_user'.`;
-                    
-                    const interpretation = await getAIResponse(
-                        [...history, { role: 'user', content: ctx.body }],
-                        contextForInterpretation
-                    );
-                    
-                    if (interpretation.type === 'tool' && interpretation.data.tool === 'respond_to_user') {
-                        finalResponse = interpretation.data.payload.response;
-                    } else {
-                        finalResponse = "Acción completada con éxito.";
-                    }
-                }
+            if (toolResult && toolResult.error) {
+                console.log(`❌ La herramienta falló. Devolviendo error a la IA para corrección.`);
+                attempts++;
+                
+                const contextForCorrection = `La herramienta 'run_query_json' falló.
+                - Tu consulta fue: ${JSON.stringify(aiResponse.data.payload.input.sql)}
+                - El error devuelto por la base de datos fue: "${toolResult.error}"
+                - Por favor, analiza el error, corrige tu consulta SQL y llama a la herramienta 'run_query_json' de nuevo. NO te disculpes.`;
+                
+                aiResponse = await getAIResponse(
+                    [...history, { role: 'user', content: ctx.body }],
+                    contextForCorrection
+                );
+                // El bucle continuará con la nueva respuesta de la IA
+            } else {
+                console.log('✅ La herramienta tuvo éxito. Pidiendo a la IA que interprete el resultado.');
+                const contextForInterpretation = `El sistema ejecutó la consulta SQL con éxito.
+                - Tu consulta fue: ${JSON.stringify(aiResponse.data.payload.input.sql)}
+                - El resultado fue: ${JSON.stringify(toolResult)}.
+                Ahora, genera una respuesta final y amigable para el usuario usando 'respond_to_user'.`;
+                
+                aiResponse = await getAIResponse( // Sobrescribimos aiResponse con la interpretación final
+                    [...history, { role: 'user', content: ctx.body }],
+                    contextForInterpretation
+                );
+                break; // Salimos del bucle porque la acción fue exitosa
             }
         }
-        
-        // Manejo de la respuesta final, ya sea por éxito, corrección o error
+
+        // --- MANEJO DE LA RESPUESTA FINAL ---
         if (aiResponse.type === 'tool' && aiResponse.data.tool === 'respond_to_user') {
             finalResponse = aiResponse.data.payload.response;
         } else if (aiResponse.type === 'text') {
@@ -98,6 +87,6 @@ export const mainFlow = addKeyword(EVENTS.WELCOME)
             { role: 'assistant', content: finalResponse }
         ];
 
-        await state.update({ history: newHistory, lastInteraction: now, attempts });
+        await state.update({ history: newHistory, lastInteraction: now, attempts: 0 }); // Reiniciamos intentos al final
         await flowDynamic(finalResponse);
     });
