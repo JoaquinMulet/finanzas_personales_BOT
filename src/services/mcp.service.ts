@@ -3,9 +3,6 @@
 import { env } from '../config/environment';
 import { randomUUID } from 'crypto';
 
-/**
- * Representa una respuesta JSON-RPC estándar.
- */
 interface JsonRpcResponse {
   jsonrpc: string;
   id: string;
@@ -30,14 +27,10 @@ class MCPService {
             : `https://${env.mcpServerUrl}`;
     }
 
-    /**
-     * Asegura que tenemos un ID de sesión válido, inicializándolo si es necesario.
-     */
     private ensureSession(): Promise<string> {
         if (this.sessionId) {
             return Promise.resolve(this.sessionId);
         }
-
         if (this.initializationPromise) {
             return this.initializationPromise;
         }
@@ -45,7 +38,6 @@ class MCPService {
         this.initializationPromise = new Promise(async (resolve, reject) => {
             try {
                 console.log('🤝 Iniciando nueva sesión MCP...');
-                
                 const initPayload = {
                     jsonrpc: "2.0",
                     method: "initialize",
@@ -79,7 +71,7 @@ class MCPService {
                 resolve(sessionId);
 
             } catch (error) {
-                this.initializationPromise = null; // Permitir reintentos
+                this.initializationPromise = null;
                 reject(error);
             }
         });
@@ -88,25 +80,28 @@ class MCPService {
     }
 
     /**
-     * Ejecuta una consulta SQL usando la sesión de MCP establecida.
+     * Ejecuta una llamada a una herramienta en el servidor MCP.
+     * @param toolName - El nombre de la herramienta a llamar (ej. 'run_query_json').
+     * @param toolArgs - Los argumentos para la herramienta.
      */
-    public async executeSql(query: string | string[]): Promise<any> {
+    public async executeTool(toolName: string, toolArgs: any): Promise<any> {
         try {
             const sessionId = await this.ensureSession();
 
+            // --- ¡AQUÍ ESTÁ LA CORRECCIÓN FINAL! ---
+            // Construimos el payload oficial del protocolo MCP
             const mcpPayload = {
                 jsonrpc: "2.0",
-                method: "run_query_json",
+                method: "tools/call", // El método SIEMPRE es 'tools/call'
                 params: {
-                    input: {
-                        sql: Array.isArray(query) ? query.join('; ') : query,
-                        row_limit: 1000
-                    }
+                    name: toolName, // El nombre de la herramienta va aquí
+                    input: toolArgs // Los argumentos de la herramienta van dentro de 'input'
                 },
                 id: randomUUID()
             };
+            // --- FIN DE LA CORRECCIÓN ---
 
-            console.log(`➡️  Enviando llamada a herramienta MCP: ${mcpPayload.method}`);
+            console.log(`➡️  Enviando llamada a herramienta MCP: ${toolName}`);
             
             const response = await fetch(`${this.mcpServerUrl}mcp`, {
                 method: 'POST',
@@ -123,21 +118,18 @@ class MCPService {
                 throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${errorText}`);
             }
             
-            // --- ¡CORRECCIÓN FINAL Y DEFINITIVA! ---
-            // Leemos la respuesta como TEXTO, ya que es un text/event-stream.
             const responseText = await response.text();
-            
-            // Buscamos la línea que contiene los datos JSON.
             const dataLine = responseText.split('\n').find(line => line.startsWith('data: '));
-            
             if (!dataLine) {
+                // A veces, una respuesta exitosa sin datos (ej. un INSERT) podría no tener 'data:'
+                if (responseText.includes('"result":null')) {
+                    console.log('⬅️  Respuesta recibida de MCP (sin datos de retorno).');
+                    return { success: true };
+                }
                 throw new Error('La respuesta del servidor no contenía un evento de datos JSON válido.');
             }
-
-            // Extraemos y parseamos el JSON de la línea de datos.
-            const jsonString = dataLine.substring(5).trim(); // Quitamos "data: " y espacios
+            const jsonString = dataLine.substring(5).trim();
             const result: JsonRpcResponse = JSON.parse(jsonString);
-            // --- FIN DE LA CORRECCIÓN ---
 
             if (result.error) {
                  throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
@@ -148,7 +140,6 @@ class MCPService {
 
         } catch (error) {
             console.error('❌ Fallo la comunicación con el servicio MCP:', error);
-            // Si la sesión falla, la reseteamos para que el próximo intento sea fresco.
             this.sessionId = null;
             this.initializationPromise = null;
             return { error: 'No se pudo comunicar con el servicio de base de datos.' };
@@ -156,8 +147,13 @@ class MCPService {
     }
 }
 
-// Creamos una única instancia para que la sesión se reutilice a través de toda la aplicación.
+// Creamos una única instancia para que la sesión se reutilice
 const mcpService = new MCPService();
 
-// Exportamos la función que usará nuestro flujo principal.
-export const executeSql = (query: string | string[]) => mcpService.executeSql(query);
+// Exportamos una única función que el flujo principal usará.
+// Esta función recibe el payload directamente de la IA.
+export const executeSql = (payload: any) => {
+    // El payload que nos da la IA es: { sql: "...", row_limit: ... }
+    // La herramienta se llama 'run_query_json'
+    return mcpService.executeTool('run_query_json', payload);
+};

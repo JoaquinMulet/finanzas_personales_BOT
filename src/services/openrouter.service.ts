@@ -12,7 +12,7 @@ import { ChatCompletionMessageParam } from 'openai/resources';
  */
 export interface AIResponse {
   type: 'text' | 'tool';
-  data: any; // Puede ser un string (para text) o un objeto (para tool)
+  data: any;
 }
 
 /**
@@ -40,17 +40,12 @@ export const getAIResponse = async (
     userMessage: string
 ): Promise<AIResponse> => {
 
-    // --- ¡AQUÍ ESTÁ LA MEJORA CRÍTICA! ---
-    // 1. Creamos el pre-prompt dinámico con la fecha y hora actuales.
     const currentDate = new Date();
     const dynamicContext = `Contexto Actual: La fecha y hora de hoy es ${currentDate.toISOString()}. Úsala como referencia para cualquier cálculo de fechas relativas (como "ayer" o "la semana pasada").`;
-
-    // 2. Combinamos el contexto dinámico con el prompt estático.
     const fullSystemPrompt = `${dynamicContext}\n\n${SYSTEM_PROMPT}`;
     
-    // 3. Ensamblamos el payload completo para la API con el prompt mejorado.
     const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: fullSystemPrompt }, // Usamos el prompt completo y contextualizado
+        { role: 'system', content: fullSystemPrompt },
         ...history,
         { role: 'user', content: userMessage },
     ];
@@ -58,7 +53,9 @@ export const getAIResponse = async (
     try {
         console.log('🤖 Enviando solicitud a OpenRouter con contexto de fecha...');
         const completion = await openAIClient.chat.completions.create({
-            model: 'google/gemini-2.5-flash',
+            // Usamos un modelo potente que es bueno siguiendo instrucciones de formato JSON.
+            // Si tienes problemas, 'openai/gpt-4o' es una alternativa muy fiable.
+            model: 'google/gemini-flash-1.5',
             messages: messages,
             response_format: { type: 'json_object' }
         });
@@ -70,17 +67,31 @@ export const getAIResponse = async (
             return { type: 'text', data: 'Lo siento, no pude procesar tu solicitud en este momento.' };
         }
 
-        // Intentamos interpretar la respuesta como una llamada a una herramienta
         try {
             const parsedJson = JSON.parse(content);
-            if (parsedJson.tool && parsedJson.payload) {
-                console.log(`✅ IA respondió con una herramienta: ${parsedJson.tool}`);
-                return { type: 'tool', data: parsedJson };
+            
+            // --- ¡AQUÍ ESTÁ LA CORRECCIÓN CLAVE! ---
+            // Ahora buscamos 'tool_name' y 'arguments', el formato que le enseñamos a la IA en el prompt.
+            if (parsedJson.tool_name && parsedJson.arguments) {
+                console.log(`✅ IA respondió con una herramienta: ${parsedJson.tool_name}`);
+                
+                // Transformamos la respuesta de la IA al formato interno que nuestro `main.flow.ts` espera.
+                // Esto mantiene el resto de nuestro código limpio y desacoplado.
+                return { 
+                    type: 'tool', 
+                    data: {
+                        tool: parsedJson.tool_name,
+                        payload: parsedJson.arguments
+                    } 
+                };
             }
+            // --- FIN DE LA CORRECCIÓN ---
+
             console.log('📝 IA respondió con JSON, pero no es una herramienta. Tratando como texto.');
             return { type: 'text', data: content };
+
         } catch (error) {
-            console.log('📝 IA respondió con texto plano.');
+            console.log('📝 IA respondió con texto plano (o JSON inválido).');
             return { type: 'text', data: content };
         }
 
