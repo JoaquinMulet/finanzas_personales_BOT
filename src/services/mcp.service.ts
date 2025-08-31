@@ -24,7 +24,7 @@ class MCPService {
             try {
                 console.log('🚀 Lanzando el proceso del servidor postgres-mcp...');
 
-                const command = 'postgres-mcp';
+                const command = '/opt/venv_python/bin/postgres-mcp';
                 const args = [
                     '--access-mode=unrestricted',
                     env.db.host,
