@@ -47,7 +47,10 @@ class MCPService {
                 
                 const response = await fetch(`${this.mcpServerUrl}/mcp`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json', 
+                        'Accept': 'application/json, text/event-stream'
+                    },
                     body: JSON.stringify(initPayload),
                 });
 
