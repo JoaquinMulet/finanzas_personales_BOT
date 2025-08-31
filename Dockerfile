@@ -24,14 +24,9 @@ RUN apt-get update && apt-get install -y \
 # Asegurarse de que las aplicaciones instaladas con pipx estén en la RUTA del sistema
 RUN pipx ensurepath
 
-# --- Instalación de la Herramienta MCP con pipx (Método Correcto para PEP 668) ---
-# Usamos pipx para instalar 'uv' de forma segura.
-RUN pipx install uv
-
 # Usamos pipx para instalar 'postgres-mcp' de forma segura.
 # pipx manejará el entorno virtual por nosotros.
 RUN pipx install postgres-mcp
-# --- Fin de la instalación de MCP ---
 
 
 # Establece el directorio de trabajo para la aplicación de Node.js
