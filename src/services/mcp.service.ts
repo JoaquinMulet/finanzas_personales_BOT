@@ -30,12 +30,9 @@ class MCPService {
     }
 
     private async ensureSession(): Promise<string> {
-        if (this.sessionId) {
-            return Promise.resolve(this.sessionId);
-        }
-        if (this.initializationPromise) {
-            return this.initializationPromise;
-        }
+        if (this.sessionId) return Promise.resolve(this.sessionId);
+        if (this.initializationPromise) return this.initializationPromise;
+
         this.initializationPromise = new Promise(async (resolve, reject) => {
             try {
                 console.log('🤝 Iniciando nueva sesión MCP...');
@@ -70,6 +67,60 @@ class MCPService {
         return this.initializationPromise;
     }
 
+    /**
+     * Parsea una respuesta text/event-stream para extraer el objeto JSON completo.
+     * El servidor MCP a veces envía el JSON dentro de un evento 'data:'.
+     */
+    private async parseStreamingResponse(response: Response): Promise<string> {
+        const reader = response.body?.getReader();
+        if (!reader) {
+            // LOG: Si no hay un cuerpo de stream, leemos el texto de la forma tradicional.
+            console.log('📜 [PARSER] No se detectó un stream. Leyendo como texto plano.');
+            return await response.text();
+        }
+
+        const decoder = new TextDecoder();
+        let fullText = '';
+        
+        console.log('🌊 [PARSER] Iniciando lectura del stream de datos...');
+        let chunkIndex = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                console.log('✅ [PARSER] Fin del stream.');
+                break;
+            }
+            
+            // LOG: Mostramos cada trozo de datos (chunk) a medida que llega.
+            const chunkText = decoder.decode(value, { stream: true });
+            console.log(`📦 [PARSER] Chunk #${chunkIndex} recibido:`, chunkText);
+            fullText += chunkText;
+            chunkIndex++;
+        }
+        
+        // LOG: Mostramos el texto completo ensamblado a partir de todos los chunks.
+        console.log('📄 [PARSER] Texto completo ensamblado del stream:\n--- TEXTO COMPLETO ---\n' + fullText + '\n--- FIN TEXTO COMPLETO ---');
+
+        const lines = fullText.split('\n');
+        // LOG: Mostramos cómo se divide el texto completo en líneas individuales.
+        console.log('✂️ [PARSER] Texto dividido en líneas:', lines);
+
+        const dataLine = lines.find(line => line.startsWith('data:'));
+        
+        if (dataLine) {
+            // LOG: Informamos que encontramos la línea 'data:' y cuál es.
+            console.log(`🎯 [PARSER] Línea 'data:' encontrada: "${dataLine}"`);
+            const jsonContent = dataLine.substring(5).trim();
+            // LOG: Mostramos el contenido JSON extraído antes de devolverlo.
+            console.log(`✨ [PARSER] Contenido JSON extraído para parsear: "${jsonContent}"`);
+            return jsonContent;
+        } else {
+            // LOG: Si no hay línea 'data:', asumimos que todo el texto es el JSON.
+            console.log('⚠️ [PARSER] No se encontró una línea específica "data:". Se usará el texto completo.');
+            return fullText;
+        }
+    }
+
     public async executeTool(toolName: string, toolArgs: any): Promise<any> {
         try {
             const sessionId = await this.ensureSession();
@@ -92,29 +143,35 @@ class MCPService {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json', 
-                    'Accept': 'application/json',
+                    'Accept': 'application/json, text/event-stream',
                     'mcp-session-id': sessionId 
                 },
                 body: JSON.stringify(mcpPayload),
             });
+            
+            // LOG: Mostramos el status y las cabeceras de la respuesta HTTP.
+            console.log(`📥 [HTTP] Respuesta recibida con Status: ${response.status} ${response.statusText}`);
+            console.log('[HTTP] Cabeceras de la respuesta:', Object.fromEntries(response.headers.entries()));
 
-            const responseText = await response.text();
+            const responseText = await this.parseStreamingResponse(response);
+
             if (!response.ok) {
                 try {
                     const errorJson = JSON.parse(responseText);
                     if (errorJson.error) {
                         throw new Error(`Error reportado por el servidor MCP: ${errorJson.error.message}`);
                     }
-                    // Si no hay un error JSON específico, lanzar error general
                     throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${responseText}`);
                 } catch (e) {
-                    // Si el parseo falla o es otro tipo de error, lo propagamos
                     if (e instanceof Error) throw e;
                     throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${responseText}`);
                 }
             }
             
+            // LOG: Mostramos el objeto JavaScript final después de un parseo exitoso.
+            console.log('✔️ [JSON] Parseo exitoso. Objeto resultante:', JSON.parse(responseText));
             const result: JsonRpcResponse = JSON.parse(responseText);
+
             if (result.error) {
                 throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
             }
