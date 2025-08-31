@@ -1,10 +1,20 @@
 import { createBot, createProvider, createFlow } from '@builderbot/bot'
 import { BaileysProvider as Provider } from '@builderbot/provider-baileys'
-import { PostgreSQLAdapter } from '@builderbot/database-postgres'
+import { PostgreSQLAdapter } from '@builderbot/database-postgres';
 import { env } from './config/environment'
-import { mainFlow } from './flows/main.flow'
+import { mainFlow } from './flows/main.flow';
+import { URL } from 'url';
 
-const adapterDB = new PostgreSQLAdapter(env.databaseUrl)
+// Parse the database URL
+const dbUrl = new URL(env.databaseUrl);
+
+const adapterDB = new PostgreSQLAdapter({
+    host: dbUrl.hostname,
+    user: dbUrl.username,
+    password: dbUrl.password,
+    database: dbUrl.pathname.substring(1), // Remove leading '/' from pathname
+    port: parseInt(dbUrl.port, 10),
+});
 const adapterProvider = createProvider(Provider)
 const adapterFlow = createFlow([mainFlow])
 
