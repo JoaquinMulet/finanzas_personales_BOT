@@ -1,11 +1,15 @@
 # Usamos una imagen base de Node.js completa y estable (Debian Bullseye)
 FROM node:18-bullseye
 
-# Instala las dependencias de sistema necesarias para Baileys, Python y las herramientas de compilación
+# --- ¡AQUÍ ESTÁ LA CORRECCIÓN CLAVE! ---
+# 1. Instala las dependencias de sistema necesarias.
+# 2. En lugar de 'python3', instalamos explícitamente 'python3.12'.
+# 3. También instalamos 'python3.12-venv' para que 'uv' funcione correctamente.
 RUN apt-get update && apt-get install -y \
     g++ \
     make \
-    python3 \
+    python3.12 \
+    python3.12-venv \
     python3-pip \
     git \
     libnss3 \
@@ -18,12 +22,12 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Instalación de la Herramienta MCP con UV (Método Recomendado) ---
-# 1. Instala 'uv' usando pip
+# --- Instalación de la Herramienta MCP con UV ---
+# 1. Instala 'uv' usando pip.
 RUN pip3 install uv
 
-# 2. Usa 'uv' para instalar el paquete 'postgres-mcp' globalmente en el sistema.
-#    Añadimos el flag --system para cumplir con los requerimientos de uv.
+# 2. Usa 'uv' para instalar el paquete 'postgres-mcp' globalmente.
+#    'uv' ahora usará la versión de Python 3.12 que acabamos de instalar.
 RUN uv pip install postgres-mcp --system
 # --- Fin de la instalación de MCP ---
 
