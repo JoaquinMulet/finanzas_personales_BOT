@@ -1,8 +1,8 @@
 # --- Stage 1: Construir el Entorno de Python con postgres-mcp ---
     FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS python_builder
 
-    # Instala dependencias del sistema necesarias para psycopg3 (el driver de postgres)
-    RUN apt-get update && apt-get install -y libpq-dev gcc && rm -rf /var/lib/apt/lists/*
+    # Instala dependencias del sistema necesarias para psycopg3 Y AHORA GIT
+    RUN apt-get update && apt-get install -y libpq-dev gcc git && rm -rf /var/lib/apt/lists/*
     
     # Clona el repositorio oficial de postgres-mcp
     RUN git clone https://github.com/crystaldba/postgres-mcp.git /app/postgres-mcp
