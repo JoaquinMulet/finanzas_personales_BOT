@@ -95,7 +95,7 @@ class MCPService {
                 method: "tools/call", // El método SIEMPRE es 'tools/call'
                 params: {
                     name: toolName, // El nombre de la herramienta va aquí
-                    input: toolArgs // Los argumentos de la herramienta van dentro de 'input'
+                    arguments: toolArgs // Los argumentos de la herramienta van dentro de 'input'
                 },
                 id: randomUUID()
             };
