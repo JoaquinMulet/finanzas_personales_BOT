@@ -18,12 +18,13 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Instalación de la Herramienta MCP con UV (Método Recomendado por el README) ---
+# --- Instalación de la Herramienta MCP con UV (Método Recomendado) ---
 # 1. Instala 'uv' usando pip
 RUN pip3 install uv
 
-# 2. Usa 'uv' para instalar el paquete 'postgres-mcp', tal como indica la documentación.
-RUN uv pip install postgres-mcp
+# 2. Usa 'uv' para instalar el paquete 'postgres-mcp' globalmente en el sistema.
+#    Añadimos el flag --system para cumplir con los requerimientos de uv.
+RUN uv pip install postgres-mcp --system
 # --- Fin de la instalación de MCP ---
 
 
