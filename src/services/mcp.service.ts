@@ -22,9 +22,13 @@ class MCPService {
         if (!env.mcpServerUrl) {
             throw new Error('La URL del servidor MCP no está configurada.');
         }
-        this.mcpServerUrl = env.mcpServerUrl.startsWith('http')
+        const baseUrl = env.mcpServerUrl.startsWith('http')
             ? env.mcpServerUrl
             : `https://${env.mcpServerUrl}`;
+        
+        // CORRECCIÓN 1: Normalizamos la URL para que nunca tenga una barra al final.
+        // Esto evita errores de doble barra (//) sin importar cómo se configure la variable de entorno.
+        this.mcpServerUrl = baseUrl.replace(/\/$/, '');
     }
 
     private async ensureSession(): Promise<string> {
@@ -35,7 +39,6 @@ class MCPService {
             return this.initializationPromise;
         }
         this.initializationPromise = new Promise(async (resolve, reject) => {
-            // ... (lógica de inicialización sin cambios, es perfecta) ...
             try {
                 console.log('🤝 Iniciando nueva sesión MCP...');
                 const initPayload = {
@@ -43,14 +46,19 @@ class MCPService {
                     params: { capabilities: { tools: {}, resources: {} }, client: { name: "fp-agent-whatsapp-bot", version: "1.0.0" } },
                     id: randomUUID()
                 };
-                const response = await fetch(`${this.mcpServerUrl}mcp`, {
+                
+                // Ahora añadimos /mcp de forma consistente, sabiendo que la base no tiene la barra.
+                const response = await fetch(`${this.mcpServerUrl}/mcp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
                     body: JSON.stringify(initPayload),
                 });
+
                 if (!response.ok) { throw new Error(`Fallo en la inicialización: ${response.status} ${await response.text()}`); }
+                
                 const sessionId = response.headers.get('mcp-session-id');
                 if (!sessionId) { throw new Error('El servidor no devolvió un mcp-session-id en las cabeceras.'); }
+                
                 this.sessionId = sessionId;
                 console.log(`✅ Sesión MCP establecida con ID: ${sessionId.substring(0, 8)}...`);
                 resolve(sessionId);
@@ -66,26 +74,26 @@ class MCPService {
         try {
             const sessionId = await this.ensureSession();
 
-            // --- ¡AQUÍ ESTÁ LA CORRECCIÓN FINAL Y DEFINITIVA! ---
-            // El servidor espera que los argumentos de la herramienta estén
-            // envueltos en un objeto "input".
+            // --- ¡CORRECCIÓN FINAL! ---
+            // El framework del servidor (FastMCP) espera los campos del modelo Pydantic
+            // (como 'sql' y 'row_limit') directamente en el objeto 'arguments'.
+            // NO debemos envolverlos en una clave "input".
             const mcpPayload = {
                 jsonrpc: "2.0",
                 method: "tools/call",
                 params: {
                     name: toolName,
-                    arguments: {
-                        input: toolArgs // Envolvemos los argumentos en la clave "input"
-                    }
+                    arguments: toolArgs // Pasamos el objeto {sql: "..."} directamente.
                 },
                 id: randomUUID()
             };
             // --- FIN DE LA CORRECCIÓN ---
 
-            console.log(`➡️  Enviando Payload a MCP en ${this.mcpServerUrl}mcp:`);
+            const endpoint = `${this.mcpServerUrl}/mcp`;
+            console.log(`➡️  Enviando Payload a MCP en ${endpoint}:`);
             console.log(JSON.stringify(mcpPayload, null, 2));
             
-            const response = await fetch(`${this.mcpServerUrl}mcp`, {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'mcp-session-id': sessionId },
                 body: JSON.stringify(mcpPayload),
@@ -97,16 +105,20 @@ class MCPService {
             }
             
             const responseText = await response.text();
+            
+            // Manejo robusto de la respuesta (stream vs. non-stream)
             const dataLine = responseText.split('\n').find(line => line.startsWith('data: '));
             if (!dataLine) {
-                if (responseText.includes('"result":')) { // Manejar respuestas no-stream
+                if (responseText.includes('"result":') || responseText.includes('"error":')) { 
                     const result: JsonRpcResponse = JSON.parse(responseText);
                     if (result.error) throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
                     console.log('⬅️  Respuesta (no-stream) recibida de MCP.');
-                    return result.result?.structuredContent;
+                    // Para run_query_json, el resultado está en `result`, no en `structuredContent`
+                    return result.result; 
                 }
                 throw new Error('La respuesta del servidor no contenía un evento de datos JSON válido.');
             }
+
             const jsonString = dataLine.substring(5).trim();
             const result: JsonRpcResponse = JSON.parse(jsonString);
 
@@ -114,11 +126,13 @@ class MCPService {
                  throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
             }
             
-            console.log('⬅️  Respuesta recibida de MCP.');
+            console.log('⬅️  Respuesta (stream) recibida de MCP.');
+             // Para run_query_json, el resultado está en `result.structuredContent`
             return result.result?.structuredContent;
 
         } catch (error) {
             console.error('❌ Fallo la comunicación con el servicio MCP:', error);
+            // Resetea el estado para permitir un reintento de conexión
             this.sessionId = null;
             this.initializationPromise = null;
             return { error: 'No se pudo comunicar con el servicio de base de datos.' };
