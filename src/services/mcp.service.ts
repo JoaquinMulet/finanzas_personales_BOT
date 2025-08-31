@@ -26,8 +26,7 @@ class MCPService {
             ? env.mcpServerUrl
             : `https://${env.mcpServerUrl}`;
         
-        // CORRECCIÓN 1: Normalizamos la URL para que nunca tenga una barra al final.
-        // Esto evita errores de doble barra (//) sin importar cómo se configure la variable de entorno.
+        // Normalizamos la URL para que nunca tenga una barra al final.
         this.mcpServerUrl = baseUrl.replace(/\/$/, '');
     }
 
@@ -47,7 +46,6 @@ class MCPService {
                     id: randomUUID()
                 };
                 
-                // Ahora añadimos /mcp de forma consistente, sabiendo que la base no tiene la barra.
                 const response = await fetch(`${this.mcpServerUrl}/mcp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
@@ -74,20 +72,17 @@ class MCPService {
         try {
             const sessionId = await this.ensureSession();
 
-            // --- ¡CORRECCIÓN FINAL! ---
-            // El framework del servidor (FastMCP) espera los campos del modelo Pydantic
-            // (como 'sql' y 'row_limit') directamente en el objeto 'arguments'.
-            // NO debemos envolverlos en una clave "input".
+            // Este payload, con argumentos planos, es el formato estándar
+            // y coincide con la firma de la herramienta 'query_json' del servidor.
             const mcpPayload = {
                 jsonrpc: "2.0",
                 method: "tools/call",
                 params: {
                     name: toolName,
-                    arguments: toolArgs // Pasamos el objeto {sql: "..."} directamente.
+                    arguments: toolArgs
                 },
                 id: randomUUID()
             };
-            // --- FIN DE LA CORRECCIÓN ---
 
             const endpoint = `${this.mcpServerUrl}/mcp`;
             console.log(`➡️  Enviando Payload a MCP en ${endpoint}:`);
@@ -99,40 +94,30 @@ class MCPService {
                 body: JSON.stringify(mcpPayload),
             });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${errorText}`);
-            }
-            
             const responseText = await response.text();
-            
-            // Manejo robusto de la respuesta (stream vs. non-stream)
-            const dataLine = responseText.split('\n').find(line => line.startsWith('data: '));
-            if (!dataLine) {
-                if (responseText.includes('"result":') || responseText.includes('"error":')) { 
-                    const result: JsonRpcResponse = JSON.parse(responseText);
-                    if (result.error) throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
-                    console.log('⬅️  Respuesta (no-stream) recibida de MCP.');
-                    // Para run_query_json, el resultado está en `result`, no en `structuredContent`
-                    return result.result; 
+            if (!response.ok) {
+                // Intentamos parsear el error incluso si el status no es 200
+                try {
+                    const errorJson = JSON.parse(responseText);
+                    if (errorJson.error) {
+                        throw new Error(`Error reportado por el servidor MCP: ${errorJson.error.message}`);
+                    }
+                } catch (e) {
+                    // Si no es JSON, lanzamos el error de texto plano
+                    throw new Error(`El servidor de base de datos respondió con un error: ${response.status} - ${responseText}`);
                 }
-                throw new Error('La respuesta del servidor no contenía un evento de datos JSON válido.');
-            }
-
-            const jsonString = dataLine.substring(5).trim();
-            const result: JsonRpcResponse = JSON.parse(jsonString);
-
-            if (result.error) {
-                 throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
             }
             
-            console.log('⬅️  Respuesta (stream) recibida de MCP.');
-             // Para run_query_json, el resultado está en `result.structuredContent`
-            return result.result?.structuredContent;
+            const result: JsonRpcResponse = JSON.parse(responseText);
+            if (result.error) {
+                throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
+            }
+
+            console.log('⬅️  Respuesta recibida de MCP.');
+            return result.result;
 
         } catch (error) {
             console.error('❌ Fallo la comunicación con el servicio MCP:', error);
-            // Resetea el estado para permitir un reintento de conexión
             this.sessionId = null;
             this.initializationPromise = null;
             return { error: 'No se pudo comunicar con el servicio de base de datos.' };
@@ -141,6 +126,10 @@ class MCPService {
 }
 
 const mcpService = new MCPService();
+
+// --- ¡EL CAMBIO DEFINITIVO! ---
+// Usamos 'query_json' porque su firma (sql: str, row_limit: int) coincide
+// con el payload plano que le estamos enviando y con los ejemplos de los SDK oficiales.
 export const executeSql = (payload: any) => {
-    return mcpService.executeTool('run_query_json', payload);
+    return mcpService.executeTool('query_json', payload);
 };
