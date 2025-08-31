@@ -6,9 +6,9 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 ENV PNPM_HOME=/usr/local/bin
 
-# NOTA: He movido el COPY . . más abajo para una mejor optimización de caché.
 COPY package*.json *-lock.yaml ./
 
+# Instala dependencias de build, incluyendo git, python y make
 RUN apk add --no-cache --virtual .gyp \
         python3 \
         make \
@@ -16,42 +16,49 @@ RUN apk add --no-cache --virtual .gyp \
     && apk add --no-cache git \
     && pnpm install
 
-# Ahora copiamos el resto del código
 COPY . .
+
 RUN pnpm run build \
     && apk del .gyp
 
+
 FROM node:21-alpine3.18 as deploy
 
+WORKDIR /app
+
+# --- ¡AQUÍ ESTÁ LA ADICIÓN CLAVE Y CORRECTA! ---
+# 1. Instala las dependencias de sistema necesarias en la imagen final
+RUN apk add --no-cache git python3 py3-pip
+
+# 2. Clona el repositorio oficial de postgres-mcp
+RUN git clone https://github.com/crystaldba/postgres-mcp.git /opt/postgres-mcp
+
+# 3. Instala las dependencias de postgres-mcp usando uv (su método preferido)
+# Esto crea un entorno virtual en /opt/venv_python
+WORKDIR /opt/postgres-mcp
+RUN pip3 install uv
+RUN uv venv /opt/venv_python
+RUN . /opt/venv_python/bin/activate && uv sync --frozen --no-dev
+# --- FIN DE LA ADICIÓN ---
+
+
+# Vuelve al directorio de trabajo de nuestra aplicación
 WORKDIR /app
 
 ARG PORT
 ENV PORT $PORT
 EXPOSE $PORT
 
-# --- ¡AQUÍ ESTÁ LA ADICIÓN CLAVE! ---
-# Instala el runtime de Python y pip en la imagen final.
-RUN apk add --no-cache python3 py3-pip
-# Instala la herramienta postgres-mcp usando pip.
-# El nombre correcto del paquete en PyPI es "crystal-dba-mcp-server-pro".
-RUN pip3 install crystal-dba-mcp-server-pro
-# --- FIN DE LA ADICIÓN ---
-
-
-COPY --from=builder /app/assets ./assets
+# Copia los artefactos de la aplicación Node.js desde la etapa 'builder'
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/*.json /app/*-lock.yaml ./
+COPY --from=builder /app/package*.json /app/*-lock.yaml ./
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@latest --activate 
 ENV PNPM_HOME=/usr/local/bin
 
-# NOTA: No necesitamos "npm cache clean" con pnpm.
-# Y pnpm install ya se hizo en la etapa de builder, pero lo hacemos de nuevo
-# para asegurarnos de que solo las de producción están.
 RUN pnpm install --production --ignore-scripts \
     && addgroup -g 1001 -S nodejs && adduser -S -u 1001 nodejs
 
-# Cambiamos al usuario no-root
 USER nodejs
 
 CMD ["npm", "start"]
