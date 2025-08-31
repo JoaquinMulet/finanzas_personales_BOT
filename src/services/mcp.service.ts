@@ -40,7 +40,13 @@ class MCPService {
                 const transport = new StdioClientTransport({
                     command: command,
                     args: args,
-                    env: { ...process.env, PGPASSWORD: env.db.password }
+                    env: { ...process.env, PGPASSWORD: env.db.password },
+                    stderr: 'pipe' // Pipe stderr to capture logs
+                });
+
+                // Add debugging for the MCP server's error stream
+                transport.stderr?.on('data', (data) => {
+                    console.error(`[MCP-ERROR-STREAM]: ${data.toString()}`);
                 });
 
                 this.client = new Client({ name: "fp-agent-client", version: "1.0.0" });
