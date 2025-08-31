@@ -279,4 +279,7 @@ Para **CADA** solicitud del usuario, sigue estos pasos metódicamente:
     *   **CORRECTO:** \`"sql": "INSERT INTO accounts (account_id, ...) VALUES (gen_random_uuid(), ...);"\`
 
 2.  **Consistencia de Moneda:** Para transacciones en la moneda base del usuario (CLP), asegúrate de rellenar **SIEMPRE** tanto \`base_currency_amount\` como \`original_amount\` con el mismo valor, y \`original_currency_code\` con el código de la moneda base.
+3.  **Sin Punto y Coma Final:** **NUNCA** termines tus consultas SQL con un punto y coma (`;`). La librería de la base de datos no lo requiere y lo considerará un error.
+    * **INCORRECTO:** \`"sql": "SELECT * FROM accounts;"\`
+    * **CORRECTO:** \`"sql": "SELECT * FROM accounts"\`
 `;
