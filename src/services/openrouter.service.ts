@@ -60,7 +60,7 @@ export const getAIResponse = async (
         const completion = await openAIClient.chat.completions.create({
             // Usamos un modelo potente que es bueno siguiendo instrucciones de formato JSON.
             // Si tienes problemas, 'openai/gpt-4o' es una alternativa muy fiable.
-            model: 'google/gemini-flash-1.5',
+            model: 'google/gemini-2.5-flash',
             messages: messages,
             response_format: { type: 'json_object' }
         });
