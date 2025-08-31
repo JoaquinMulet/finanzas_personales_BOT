@@ -27,89 +27,67 @@ class MCPService {
             : `https://${env.mcpServerUrl}`;
     }
 
-    private ensureSession(): Promise<string> {
+    private async ensureSession(): Promise<string> {
         if (this.sessionId) {
             return Promise.resolve(this.sessionId);
         }
         if (this.initializationPromise) {
             return this.initializationPromise;
         }
-
         this.initializationPromise = new Promise(async (resolve, reject) => {
+            // ... (lógica de inicialización sin cambios, es perfecta) ...
             try {
                 console.log('🤝 Iniciando nueva sesión MCP...');
                 const initPayload = {
-                    jsonrpc: "2.0",
-                    method: "initialize",
-                    params: {
-                        capabilities: { tools: {}, resources: {} },
-                        client: { name: "fp-agent-whatsapp-bot", version: "1.0.0" }
-                    },
+                    jsonrpc: "2.0", method: "initialize",
+                    params: { capabilities: { tools: {}, resources: {} }, client: { name: "fp-agent-whatsapp-bot", version: "1.0.0" } },
                     id: randomUUID()
                 };
-
                 const response = await fetch(`${this.mcpServerUrl}mcp`, {
                     method: 'POST',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json, text/event-stream'
-                    },
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
                     body: JSON.stringify(initPayload),
                 });
-
-                if (!response.ok) {
-                    throw new Error(`Fallo en la inicialización: ${response.status} ${await response.text()}`);
-                }
-
+                if (!response.ok) { throw new Error(`Fallo en la inicialización: ${response.status} ${await response.text()}`); }
                 const sessionId = response.headers.get('mcp-session-id');
-                if (!sessionId) {
-                    throw new Error('El servidor no devolvió un mcp-session-id en las cabeceras.');
-                }
-
+                if (!sessionId) { throw new Error('El servidor no devolvió un mcp-session-id en las cabeceras.'); }
                 this.sessionId = sessionId;
                 console.log(`✅ Sesión MCP establecida con ID: ${sessionId.substring(0, 8)}...`);
                 resolve(sessionId);
-
             } catch (error) {
                 this.initializationPromise = null;
                 reject(error);
             }
         });
-
         return this.initializationPromise;
     }
 
-    /**
-     * Ejecuta una llamada a una herramienta en el servidor MCP.
-     * @param toolName - El nombre de la herramienta a llamar (ej. 'run_query_json').
-     * @param toolArgs - Los argumentos para la herramienta.
-     */
     public async executeTool(toolName: string, toolArgs: any): Promise<any> {
         try {
             const sessionId = await this.ensureSession();
 
-            // --- ¡AQUÍ ESTÁ LA CORRECCIÓN FINAL! ---
-            // Construimos el payload oficial del protocolo MCP
+            // --- ¡AQUÍ ESTÁ LA CORRECCIÓN FINAL Y DEFINITIVA! ---
+            // El servidor espera que los argumentos de la herramienta estén
+            // envueltos en un objeto "input".
             const mcpPayload = {
                 jsonrpc: "2.0",
-                method: "tools/call", // El método SIEMPRE es 'tools/call'
+                method: "tools/call",
                 params: {
-                    name: toolName, // El nombre de la herramienta va aquí
-                    arguments: toolArgs // Los argumentos de la herramienta van dentro de 'input'
+                    name: toolName,
+                    arguments: {
+                        input: toolArgs // Envolvemos los argumentos en la clave "input"
+                    }
                 },
                 id: randomUUID()
             };
             // --- FIN DE LA CORRECCIÓN ---
 
-            console.log(`➡️  Enviando llamada a herramienta MCP: ${toolName}`);
+            console.log(`➡️  Enviando Payload a MCP en ${this.mcpServerUrl}mcp:`);
+            console.log(JSON.stringify(mcpPayload, null, 2));
             
-            const response = await fetch(`${this.mcpServerUrl}mcp`, {
+            const response = await fetch(`${this.mcpServerUrl}/mcp`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json, text/event-stream',
-                    'mcp-session-id': sessionId
-                },
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream', 'mcp-session-id': sessionId },
                 body: JSON.stringify(mcpPayload),
             });
 
@@ -121,10 +99,11 @@ class MCPService {
             const responseText = await response.text();
             const dataLine = responseText.split('\n').find(line => line.startsWith('data: '));
             if (!dataLine) {
-                // A veces, una respuesta exitosa sin datos (ej. un INSERT) podría no tener 'data:'
-                if (responseText.includes('"result":null')) {
-                    console.log('⬅️  Respuesta recibida de MCP (sin datos de retorno).');
-                    return { success: true };
+                if (responseText.includes('"result":')) { // Manejar respuestas no-stream
+                    const result: JsonRpcResponse = JSON.parse(responseText);
+                    if (result.error) throw new Error(`Error reportado por el servidor MCP: ${result.error.message}`);
+                    console.log('⬅️  Respuesta (no-stream) recibida de MCP.');
+                    return result.result?.structuredContent;
                 }
                 throw new Error('La respuesta del servidor no contenía un evento de datos JSON válido.');
             }
@@ -147,13 +126,7 @@ class MCPService {
     }
 }
 
-// Creamos una única instancia para que la sesión se reutilice
 const mcpService = new MCPService();
-
-// Exportamos una única función que el flujo principal usará.
-// Esta función recibe el payload directamente de la IA.
 export const executeSql = (payload: any) => {
-    // El payload que nos da la IA es: { sql: "...", row_limit: ... }
-    // La herramienta se llama 'run_query_json'
     return mcpService.executeTool('run_query_json', payload);
 };
