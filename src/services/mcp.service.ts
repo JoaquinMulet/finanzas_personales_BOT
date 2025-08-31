@@ -50,7 +50,7 @@ export const executeSql = async (query: string | string[]): Promise<any> => {
     };
     
     // La documentación indica que el endpoint es /mcp
-    const finalUrl = `${mcpServerUrl}/mcp`;
+    const finalUrl = `${mcpServerUrl}mcp`;
 
     // imprime el finalURL
     console.log(`➡️  Enviando llamada a herramienta MCP: ${finalUrl}`);
