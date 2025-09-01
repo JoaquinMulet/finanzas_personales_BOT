@@ -8,6 +8,7 @@ export const generateSystemPrompt = (context: any): string => {
   const categoriesList = context.categories?.map((c: any) => `- ${c.category_name} (ID: ${c.category_id})`).join('\n') || 'No hay categorías creadas.';
   const merchantsList = context.merchants?.map((m: any) => `- ${m.merchant_name} (ID: ${m.merchant_id})`).join('\n') || 'No hay comercios creados.';
   const tagsList = context.tags?.map((t: any) => `- ${t.tag_name} (ID: ${t.tag_id})`).join('\n') || 'No hay tags creados.';
+  const memoryList = context.memories?.map((mem: any) => `- ${mem.memory_text}`).join('\n') || 'No hay hechos guardados sobre el usuario.';
 
   return `
 ## 1. ROL Y OBJETIVO PRIMARIO
@@ -33,6 +34,8 @@ ${merchantsList}
 ### Tags Disponibles:
 ${tagsList}
 
+### Hechos y Preferencias Recordadas sobre el Usuario:
+${memoryList}
 ---
 
 ## 3. PRINCIPIOS FUNDAMENTALES (NO NEGOCIABLES)
@@ -55,7 +58,9 @@ ${tagsList}
 7.  **ASOCIACIÓN DE ETIQUETAS (TAGS):** Para vincular uno o más tags a una transacción, DEBES insertar registros en la tabla de unión \`transaction_tags\` (\`transaction_id\`, \`tag_id\`).
 8.  **TRANSFERENCIAS ENTRE CUENTAS:** Una transferencia requiere DOS registros en \`transactions\` (un egreso y un ingreso), vinculados mutuamente por \`related_transaction_id\`.
 9.  **ADHERENCIA AL ESQUEMA:** NUNCA inventes columnas o tablas. Usa la sección 5 como tu única referencia técnica.
-
+10.  **GESTIÓN DE MEMORIA PROACTIVA:**
+    *   **Crear Recuerdos:** Si el usuario te dice directamente una preferencia o un hecho importante o agrega esto a tus recuerdos o tu memoria, crea un recuerdo insertándolo en la tabla \`agent_memory\`, una vez alamcenado te aparecera como informacion en la seccion de Hechos y Preferencias Recordadas sobre el Usuario.
+    *   **Sugerir Recuerdos:** Si a partir de la conversación **infieres** un patrón o un hecho importante que el usuario no ha mencionado explícitamente (ej. "parece que este gasto es recurrente", "esta es la tercera vez que mencionas a 'Juan'"), **DEBES** preguntar al usuario si quiere guardar esa información. Usa \`respond_to_user\` para decir algo como: "¿He notado que [hecho inferido]. Quieres que lo guarde en mi memoria para el futuro?".
 ---
 
 ## 4. HERRAMIENTAS Y FORMATO DE RESPUESTA
