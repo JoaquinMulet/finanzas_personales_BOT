@@ -1,10 +1,7 @@
 import { MCPClient } from 'mcp-client';
 import { env } from '../config/environment';
 
-export interface SessionState {
-    get<T>(key: string): T;
-    update(data: Record<string, any>): Promise<any>;
-}
+export interface SessionState { /* ... */ }
 
 const client = new MCPClient({
   name: "fp-agent-whatsapp-bot",
@@ -14,17 +11,6 @@ const client = new MCPClient({
 let connectionPromise: Promise<void> | null = null;
 
 async function ensureConnection() {
-    let isConnected = true;
-    try {
-        await client.ping();
-    } catch (error) {
-        isConnected = false;
-    }
-
-    if (!isConnected) {
-        connectionPromise = null;
-    }
-
     if (!connectionPromise) {
         console.log('🤝 Conectando al servidor MCP usando mcp-client...');
         const serverUrl = env.mcpServerUrl.replace(/\/$/, '');
@@ -32,13 +18,8 @@ async function ensureConnection() {
             type: 'sse',
             url: `${serverUrl}/sse`
         });
-        try {
-            await connectionPromise;
-            console.log('✅ Conexión con el servidor MCP establecida con éxito.');
-        } catch (error) {
-            connectionPromise = null;
-            throw error;
-        }
+        await connectionPromise;
+        console.log('✅ Conexión con el servidor MCP establecida con éxito.');
     }
     return connectionPromise;
 }
@@ -56,15 +37,9 @@ class MCPService {
             
             console.log('⬅️  Respuesta de la herramienta recibida con éxito.');
             
-            // --- ¡CAMBIOS FINALES AQUÍ! ---
-            let content = result.structuredContent;
-
-            // 1. Parsear el string JSON que devuelve el servidor.
-            if (typeof content === 'string') {
-                content = JSON.parse(content);
-            }
+            // "Desempaquetamos" el resultado para dárselo limpio al flujo principal.
+            const content = result.structuredContent as any;
             
-            // 2. "Desempaquetar" el resultado para dárselo limpio al flujo principal.
             if (content && content.status === 'success' && content.data !== undefined) {
                 return content.data; // Devolvemos solo el array de datos
             } else if (content && content.error) {
