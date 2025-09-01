@@ -1,6 +1,5 @@
 import OpenAI from 'openai';
 import { env } from '../config/environment';
-import { SYSTEM_PROMPT } from '../config/system_prompt';
 import { ChatCompletionMessageParam } from 'openai/resources';
 
 // Las interfaces no cambian
@@ -16,27 +15,25 @@ const openAIClient = new OpenAI({
     },
 });
 
-// --- ¡FUNCIÓN REFACTORIZADA! ---
-// Ahora acepta un array de mensajes completo, dándonos control total desde el flujo.
 export const getAIResponse = async (
     messages: ChatCompletionMessageParam[]
 ): Promise<AIResponse> => {
     try {
-        console.log('--- INICIO: CONTEXTO COMPLETO ENVIADO A LA IA ---');
+        console.log('\n--- [openrouter.service.ts] INICIO: CONTEXTO COMPLETO ENVIADO A LA IA ---');
         console.log(JSON.stringify(messages, null, 2));
-        console.log('--- FIN: CONTEXTO COMPLETO ENVIADO A LA IA ---');
+        console.log('--- [openrouter.service.ts] FIN: CONTEXTO COMPLETO ENVIADO A LA IA ---\n');
         
         const completion = await openAIClient.chat.completions.create({
             model: 'google/gemini-flash-1.5',
-            messages, // Usamos directamente el array que nos pasan
+            messages,
             response_format: { type: 'json_object' }
         });
 
         const content = completion.choices[0].message.content;
 
-        console.log('--- INICIO: RESPUESTA CRUDA RECIBIDA DE LA IA ---');
+        console.log('\n--- [openrouter.service.ts] INICIO: RESPUESTA CRUDA RECIBIDA DE LA IA ---');
         console.log(content);
-        console.log('--- FIN: RESPUESTA CRUDA RECIBIDA DE LA IA ---');
+        console.log('--- [openrouter.service.ts] FIN: RESPUESTA CRUDA RECIBIDA DE LA IA ---\n');
 
         if (!content) {
             return { type: 'text', data: 'Lo siento, no pude procesar tu solicitud.' };
@@ -51,7 +48,7 @@ export const getAIResponse = async (
             return { type: 'text', data: content };
         }
     } catch (error) {
-        console.error('❌ Error al comunicarse con la API de OpenRouter:', error);
+        console.error('❌ [openrouter.service.ts] Error al comunicarse con la API de OpenRouter:', error);
         return { type: 'text', data: 'Hubo un problema de conexión con mi cerebro (la IA).' };
     }
 };

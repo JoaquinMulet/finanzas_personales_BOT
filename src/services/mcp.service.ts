@@ -4,41 +4,52 @@ import { env } from '../config/environment';
 export interface SessionState { get<T>(key: string): T; update(data: Record<string, any>): Promise<any>; }
 
 const client = new MCPClient({ name: "fp-agent-whatsapp-bot", version: "1.0.0" });
-let connectionPromise: Promise<void> | null = null;
-
 async function ensureConnection() {
-
-    if (!connectionPromise) {
-        console.log('🤝 Conectando al servidor MCP...');
+    try {
+        console.log('🤝 [mcp.service.ts] Asegurando conexión con el servidor MCP...');
         const serverUrl = env.mcpServerUrl.replace(/\/$/, '');
-        connectionPromise = client.connect({ type: 'sse', url: `${serverUrl}/sse` });
-        await connectionPromise;
-        console.log('✅ Conexión MCP establecida.');
+        await client.connect({ type: 'sse', url: `${serverUrl}/sse` });
+        console.log('✅ [mcp.service.ts] Conexión MCP asegurada.');
+    } catch (error) {
+        console.error('❌ [mcp.service.ts] Fallo al conectar con MCP:', error);
+        // Re-throw the error to allow the caller to handle it
+        throw error;
     }
-    return connectionPromise;
 }
 
 class MCPService {
     public async executeTool(toolName: string, toolArgs: any): Promise<any> {
         try {
             await ensureConnection();
-            console.log(`➡️  Enviando la herramienta '${toolName}'...`);
+            console.log(`➡️  [mcp.service.ts] Enviando la herramienta '${toolName}' con payload:`, JSON.stringify(toolArgs, null, 2));
+            
             const result = await client.callTool({ name: toolName, arguments: toolArgs });
-            console.log('⬅️  Respuesta cruda de mcp-client:', result);
+            
+            console.log('⬅️  [mcp.service.ts] Respuesta CRUDA recibida de mcp-client:', result);
             
             let content = result.structuredContent;
+            console.log('⬅️  [mcp.service.ts] Contenido estructurado extraído:', content);
 
-            // Si el servidor devuelve un string JSON, lo parseamos.
             if (typeof content === 'string') {
+                console.log('ℹ️  [mcp.service.ts] El contenido es un string, parseando a JSON...');
                 content = JSON.parse(content);
+                console.log('ℹ️  [mcp.service.ts] Contenido parseado:', content);
             }
             
-            // Devolvemos el objeto completo o un objeto vacío como fallback seguro.
-            return content || {};
+            if (content && content.status === 'success' && content.data !== undefined) {
+                console.log('✅ [mcp.service.ts] Devolviendo campo "data" del resultado.');
+                return content.data;
+            } else if (content && content.error) {
+                console.error('❌ [mcp.service.ts] El servidor devolvió un error de negocio:', content.error);
+                return { error: content.error };
+            }
 
+            console.warn("⚠️ [mcp.service.ts] El contenido no tenía el formato esperado. Devolviendo [] como fallback.");
+            return [];
         } catch (error) {
-            console.error('❌ Fallo en mcp-client:', error);
-            connectionPromise = null; 
+            console.error('❌ [mcp.service.ts] Fallo en la ejecución de la herramienta con mcp-client:', error);
+            // The connection logic is now handled within ensureConnection, 
+            // so we just log the error here. 
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido.';
             return { error: errorMessage };
         }
