@@ -1,7 +1,10 @@
 import { MCPClient } from 'mcp-client';
 import { env } from '../config/environment';
 
-export interface SessionState { /* ... */ }
+export interface SessionState {
+    get<T>(key: string): T;
+    update(data: Record<string, any>): Promise<any>;
+}
 
 const client = new MCPClient({
   name: "fp-agent-whatsapp-bot",
@@ -11,6 +14,14 @@ const client = new MCPClient({
 let connectionPromise: Promise<void> | null = null;
 
 async function ensureConnection() {
+    try {
+        if (connectionPromise) {
+            await client.ping();
+        }
+    } catch (e) {
+        console.log('MCP ping failed, reconnecting...');
+        connectionPromise = null;
+    }
     if (!connectionPromise) {
         console.log('🤝 Conectando al servidor MCP usando mcp-client...');
         const serverUrl = env.mcpServerUrl.replace(/\/$/, '');
@@ -28,30 +39,33 @@ class MCPService {
     public async executeTool(toolName: string, toolArgs: any): Promise<any> {
         try {
             await ensureConnection();
-            console.log(`➡️  Enviando la herramienta '${toolName}' usando mcp-client...`);
+            console.log(`➡️  Enviando la herramienta '${toolName}' con payload:`, toolArgs);
             
             const result = await client.callTool({
                 name: toolName,
                 arguments: toolArgs,
             });
             
-            console.log('⬅️  Respuesta de la herramienta recibida con éxito.');
+            console.log('⬅️  Respuesta cruda recibida de mcp-client:', result);
             
-            // "Desempaquetamos" el resultado para dárselo limpio al flujo principal.
-            const content = result.structuredContent as any;
+            let content = result.structuredContent;
+
+            if (typeof content === 'string') {
+                content = JSON.parse(content);
+            }
             
             if (content && content.status === 'success' && content.data !== undefined) {
-                return content.data; // Devolvemos solo el array de datos
+                return content.data;
             } else if (content && content.error) {
                 return { error: content.error };
             }
 
-            return content; // Fallback
+            return content;
 
         } catch (error) {
             console.error('❌ Fallo durante la ejecución de la herramienta con mcp-client:', error);
             connectionPromise = null; 
-            const errorMessage = error instanceof Error ? error.message : 'Error desconocido.';
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido al ejecutar la herramienta.';
             return { error: errorMessage };
         }
     }
