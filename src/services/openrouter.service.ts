@@ -24,7 +24,7 @@ export const getAIResponse = async (
         console.log('--- [openrouter.service.ts] FIN: CONTEXTO COMPLETO ENVIADO A LA IA ---\n');
         
         const completion = await openAIClient.chat.completions.create({
-            model: 'google/gemini-flash-2.5',
+            model: 'google/gemini-2.5-flash',
             messages,
             response_format: { type: 'json_object' }
         });
