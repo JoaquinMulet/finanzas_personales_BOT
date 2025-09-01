@@ -14,111 +14,126 @@ interface JsonRpcResponse {
   error?: { code: number; message: string; data?: any; };
 }
 
-class MCPService {
-    private mcpServerUrl: string;
+// Mapa para rastrear las peticiones pendientes y sus callbacks de Promise.
+// La clave es el ID de la petición, el valor son las funciones para resolver/rechazar la promesa.
+type PendingRequest = {
+    resolve: (value: any) => void;
+    reject: (reason?: any) => void;
+};
+const pendingRequests = new Map<string, PendingRequest>();
 
-    constructor() {
-        if (!env.mcpServerUrl) {
-            throw new Error('MCP_SERVER_URL no está configurado en el entorno.');
-        }
-        const baseUrl = env.mcpServerUrl.startsWith('http')
-            ? env.mcpServerUrl
-            : `https://${env.mcpServerUrl}`;
-        this.mcpServerUrl = baseUrl.replace(/\/$/, '');
+// Variables para gestionar la conexión persistente.
+let eventSource: EventSource | null = null;
+let sessionUrl: string | null = null;
+let connectionPromise: Promise<string> | null = null;
+
+/**
+ * Inicia y mantiene una conexión SSE persistente con el servidor MCP.
+ * Solo se ejecuta una vez.
+ */
+function initializePersistentConnection(): Promise<string> {
+    if (connectionPromise) {
+        return connectionPromise;
     }
 
-    private ensureSession(state: SessionState): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const currentSessionUrl = state.get<string>('mcpSessionUrl');
-            if (currentSessionUrl) {
-                return resolve(currentSessionUrl);
-            }
+    connectionPromise = new Promise((resolve, reject) => {
+        console.log('🤝 Abriendo conexión SSE persistente...');
+        const handshakeUrl = `${env.mcpServerUrl.replace(/\/$/, '')}/sse`;
+        eventSource = new EventSource(handshakeUrl);
 
-            console.log('🤝 Iniciando handshake SSE para obtener URL de sesión...');
-            const handshakeUrl = `${this.mcpServerUrl}/sse`;
-            const es = new EventSource(handshakeUrl);
-
-            es.addEventListener('endpoint', (event: any) => {
-                const sessionPath = event.data;
-                if (sessionPath) {
-                    const fullSessionUrl = `${this.mcpServerUrl}${sessionPath}`;
-                    console.log(`✅ Handshake exitoso. URL de sesión: ${fullSessionUrl}`);
-                    state.update({ mcpSessionUrl: fullSessionUrl }).then(() => {
-                        resolve(fullSessionUrl);
-                    });
-                } else {
-                    reject(new Error('Handshake no proporcionó una ruta de sesión.'));
-                }
-                es.close();
-            });
-
-            es.onerror = (err) => {
-                reject(new Error('Fallo en el handshake SSE.'));
-                es.close();
-            };
+        eventSource.addEventListener('endpoint', (event: any) => {
+            sessionUrl = `${env.mcpServerUrl.replace(/\/$/, '')}${event.data}`;
+            console.log(`✅ Conexión persistente establecida. URL de sesión: ${sessionUrl}`);
+            resolve(sessionUrl);
         });
-    }
-    
-    public async executeTool(toolName: string, toolArgs: any, state: SessionState): Promise<any> {
-        try {
-            const sessionEndpoint = await this.ensureSession(state);
 
-            // --- PASO 1: ENVIAR 'initialize' ---
-            // Enviamos el mensaje de inicialización pero no esperamos un JSON de vuelta.
-            // Esto "prepara" la sesión en el servidor.
-            const initPayload = {
-                jsonrpc: "2.0",
-                method: "initialize",
-                params: { capabilities: {}, client: { name: "fp-agent-whatsapp-bot" } },
-                id: randomUUID()
-            };
+        // Este es el listener principal para recibir los resultados de las herramientas.
+        eventSource.addEventListener('message', (event: any) => {
+            try {
+                const response: JsonRpcResponse = JSON.parse(event.data);
+                const { id, result, error } = response;
 
-            console.log(`➡️  Enviando 'initialize' a la URL de sesión...`);
-            const initResponse = await fetch(sessionEndpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                body: JSON.stringify(initPayload),
-            });
-
-            // Solo verificamos que la petición fue aceptada. No intentamos parsear el cuerpo.
-            if (!initResponse.ok) {
-                throw new Error(`La petición de inicialización falló con status: ${initResponse.status}`);
+                if (id && pendingRequests.has(id)) {
+                    const { resolve, reject } = pendingRequests.get(id)!;
+                    if (error) {
+                        console.log(`⬅️  Respuesta de error recibida para ID ${id}:`, error.message);
+                        reject(new Error(error.message));
+                    } else {
+                        console.log(`⬅️  Respuesta exitosa recibida para ID ${id}.`);
+                        resolve(result);
+                    }
+                    pendingRequests.delete(id);
+                }
+            } catch (e) {
+                console.warn('⚠️  Mensaje SSE recibido no era un JSON-RPC válido:', event.data);
             }
-            console.log(`✅ Petición 'initialize' aceptada por el servidor (Status: ${initResponse.status}).`);
+        });
 
-            // --- PASO 2: ENVIAR 'tools/call' Y ESPERAR EL RESULTADO JSON ---
-            // Ahora enviamos la petición real y esperamos el resultado de la consulta.
+        eventSource.onerror = (err) => {
+            console.error('❌ La conexión SSE persistente falló:', err);
+            // Rechaza todas las promesas pendientes si la conexión muere.
+            pendingRequests.forEach(p => p.reject(new Error('La conexión con el servidor MCP se ha perdido.')));
+            pendingRequests.clear();
+            eventSource?.close();
+            eventSource = null;
+            sessionUrl = null;
+            connectionPromise = null; // Permite reintentar la conexión.
+            reject(err);
+        };
+    });
+    return connectionPromise;
+}
+
+class MCPService {
+    /**
+     * Envía un comando al servidor y espera la respuesta a través del stream SSE.
+     */
+    public async executeTool(toolName: string, toolArgs: any): Promise<any> {
+        try {
+            // Asegura que la conexión persistente esté activa y obtenemos la URL de sesión.
+            const currentSessionUrl = await initializePersistentConnection();
+
+            // Creamos un ID único para esta petición específica.
+            const requestId = randomUUID();
             const toolPayload = {
                 jsonrpc: "2.0",
                 method: "tools/call",
                 params: { name: toolName, arguments: toolArgs },
-                id: randomUUID()
+                id: requestId,
             };
 
-            console.log(`➡️  Enviando 'tools/call' para obtener el resultado...`);
-            const toolResponse = await fetch(sessionEndpoint, {
+            // Creamos una promesa que se resolverá cuando llegue la respuesta por el stream SSE.
+            const responsePromise = new Promise((resolve, reject) => {
+                pendingRequests.set(requestId, { resolve, reject });
+                // Añadimos un timeout para no esperar indefinidamente.
+                setTimeout(() => {
+                    if (pendingRequests.has(requestId)) {
+                        pendingRequests.delete(requestId);
+                        reject(new Error(`Timeout: No se recibió respuesta para la petición ${requestId} en 30 segundos.`));
+                    }
+                }, 30000); // 30 segundos de timeout
+            });
+
+            console.log(`➡️  Enviando 'tools/call' (ID: ${requestId.substring(0,8)}) a ${currentSessionUrl}`);
+            
+            // Enviamos el POST. No esperamos el JSON de esta respuesta.
+            const postResponse = await fetch(currentSessionUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(toolPayload),
             });
 
-            if (!toolResponse.ok) {
-                throw new Error(`La petición de la herramienta falló: ${toolResponse.status} - ${await toolResponse.text()}`);
+            if (!postResponse.ok) {
+                // Si el POST falla, la petición no fue ni siquiera aceptada.
+                pendingRequests.delete(requestId);
+                throw new Error(`El servidor rechazó la petición POST con status ${postResponse.status}`);
             }
 
-            // Esta vez, SÍ esperamos un JSON válido como respuesta.
-            const result: JsonRpcResponse = await toolResponse.json();
-            
-            if (result.error) {
-                throw new Error(`Error en la respuesta de la herramienta: ${result.error.message}`);
-            }
-            
-            console.log('⬅️  Respuesta JSON de la herramienta recibida con éxito.');
-            return result.result;
+            // Esperamos a que la promesa sea resuelta por el listener de SSE.
+            return await responsePromise;
 
         } catch (error) {
-            console.error('❌ Fallo la comunicación con el servicio MCP:', error);
-            await state.update({ mcpSessionUrl: null });
+            console.error('❌ Fallo en executeTool:', error);
             const errorMessage = error instanceof Error ? error.message : 'Error desconocido.';
             return { error: errorMessage };
         }
@@ -128,5 +143,6 @@ class MCPService {
 const mcpService = new MCPService();
 
 export const executeSql = (payload: any, state: SessionState) => {
-    return mcpService.executeTool('run_query_json', payload, state);
+    // El estado ya no es necesario para gestionar la sesión, pero lo mantenemos por consistencia de la firma.
+    return mcpService.executeTool('run_query_json', payload);
 };
