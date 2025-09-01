@@ -56,25 +56,27 @@ class MCPService {
             
             console.log('⬅️  Respuesta de la herramienta recibida con éxito.');
             
-            // --- ¡CAMBIO CLAVE AQUÍ! ---
-            // "Desempaquetamos" el resultado para dárselo limpio al flujo principal.
-            const content = result.structuredContent as any;
+            // --- ¡CAMBIOS FINALES AQUÍ! ---
+            let content = result.structuredContent;
+
+            // 1. Parsear el string JSON que devuelve el servidor.
+            if (typeof content === 'string') {
+                content = JSON.parse(content);
+            }
             
+            // 2. "Desempaquetar" el resultado para dárselo limpio al flujo principal.
             if (content && content.status === 'success' && content.data !== undefined) {
-                // Si la consulta fue exitosa, devolvemos solo el array de datos.
-                return content.data;
+                return content.data; // Devolvemos solo el array de datos
             } else if (content && content.error) {
-                // Si el servidor devolvió un error de negocio, lo propagamos.
                 return { error: content.error };
             }
 
-            // Fallback por si la estructura no es la esperada.
-            return content;
+            return content; // Fallback
 
         } catch (error) {
             console.error('❌ Fallo durante la ejecución de la herramienta con mcp-client:', error);
             connectionPromise = null; 
-            const errorMessage = error instanceof Error ? error.message : 'Error desconocido al ejecutar la herramienta.';
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido.';
             return { error: errorMessage };
         }
     }
