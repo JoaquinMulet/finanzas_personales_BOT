@@ -26,8 +26,6 @@ async function ensureConnection() {
                 throw new Error(String(error));
             }
         }
-    } else {
-        console.log('✅ [mcp.service.ts] La conexión ya está establecida o en proceso. Reutilizando.');
     }
     return connectionPromise;
 }
@@ -47,27 +45,31 @@ class MCPService {
                 throw new Error(errorMessage);
             }
 
-            // --- ¡LA SOLUCIÓN FINAL! ---
-            // Hemos descubierto que el resultado real está en el texto del primer bloque de contenido.
             const responseText = result.content[0]?.text;
-
             if (!responseText) {
-                // Si la respuesta no tiene un bloque de texto, es una respuesta vacía válida.
-                // Devolvemos un objeto que la lógica de negocio pueda interpretar como "nada encontrado".
-                console.warn("⚠️ [mcp.service.ts] La respuesta del servidor no contenía un bloque de texto. Devolviendo objeto de éxito vacío.");
+                console.warn("⚠️ [mcp.service.ts] La respuesta del servidor estaba vacía. Devolviendo objeto de éxito vacío.");
                 return { status: "success", data: [] };
             }
 
             const responseObject = JSON.parse(responseText as string);
             
-            if (responseObject.error) {
-                // Propagamos el error de negocio que el servidor nos envió.
-                throw new Error(responseObject.error.message);
-            }
+            // --- ¡LA SOLUCIÓN FINAL A TODO! ---
+            // El servidor nos devuelve un objeto JSON-RPC completo.
+            // Debemos buscar dentro de la clave 'result' para encontrar nuestros datos.
+            const toolResult = responseObject.result;
 
-            // Devolvemos el objeto `result` completo que está dentro de la respuesta JSON-RPC.
-            // Esto contiene `status`, `data`, `rows_affected`, etc.
-            return responseObject.result;
+            if (toolResult && toolResult.status === 'success') {
+                // Si la operación fue exitosa, devolvemos el objeto de resultado completo
+                // para que el flujo principal pueda inspeccionarlo (data, rows_affected, etc.)
+                return toolResult;
+            } else if (responseObject.error) {
+                // Si la respuesta JSON-RPC contiene un error, lo propagamos.
+                throw new Error(responseObject.error.message);
+            } else {
+                // Fallback por si la estructura es inesperada.
+                console.warn("⚠️ [mcp.service.ts] La estructura de la respuesta JSON-RPC era inesperada:", responseObject);
+                return { error: "Respuesta inesperada del servidor." };
+            }
 
         } catch (error) {
             let errorMessage: string;
