@@ -8,7 +8,7 @@ export const generateSystemPrompt = (context: any): string => {
   const categoriesList = context.categories?.map((c: any) => `- ${c.category_name} (ID: ${c.category_id})`).join('\n') || 'No hay categorías creadas.';
   const merchantsList = context.merchants?.map((m: any) => `- ${m.merchant_name} (ID: ${m.merchant_id})`).join('\n') || 'No hay comercios creados.';
   const tagsList = context.tags?.map((t: any) => `- ${t.tag_name} (ID: ${t.tag_id})`).join('\n') || 'No hay tags creados.';
-  const memoryList = context.memories?.map((mem: any) => `- ${mem.memory_text}`).join('\n') || 'No hay hechos guardados sobre el usuario.';
+  const memoryList = context.agent_memories?.map((mem: any) => `- ${mem.memory_text}`).join('\n') || 'No hay hechos guardados sobre el usuario.';
 
   return `
 ## 1. ROL Y OBJETIVO PRIMARIO
