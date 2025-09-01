@@ -44,50 +44,42 @@ class MCPService {
 
             if (result.isError) {
                 const errorMessage = String(result.content[0]?.text || 'Error desconocido del servidor');
-                // Lanzamos un error con un mensaje garantizado que es un string.
                 throw new Error(errorMessage);
             }
 
+            // --- ¡LA SOLUCIÓN FINAL! ---
+            // Hemos descubierto que el resultado real está en el texto del primer bloque de contenido.
             const responseText = result.content[0]?.text;
+
             if (!responseText) {
-                // Lanzamos un error con un mensaje garantizado que es un string.
-                throw new Error("La respuesta del servidor estaba vacía.");
+                // Si la respuesta no tiene un bloque de texto, es una respuesta vacía válida.
+                // Devolvemos un objeto que la lógica de negocio pueda interpretar como "nada encontrado".
+                console.warn("⚠️ [mcp.service.ts] La respuesta del servidor no contenía un bloque de texto. Devolviendo objeto de éxito vacío.");
+                return { status: "success", data: [] };
             }
 
-            // Type assertion: we know responseText is not null/undefined from the check above
             const responseObject = JSON.parse(responseText as string);
             
             if (responseObject.error) {
-                // Lanzamos un error con un mensaje garantizado que es un string.
+                // Propagamos el error de negocio que el servidor nos envió.
                 throw new Error(responseObject.error.message);
             }
 
-            const toolResult = responseObject.result;
-
-            if (toolResult && toolResult.status === 'success' && toolResult.data !== undefined) {
-                return toolResult.data;
-            }
-            
-            return toolResult;
+            // Devolvemos el objeto `result` completo que está dentro de la respuesta JSON-RPC.
+            // Esto contiene `status`, `data`, `rows_affected`, etc.
+            return responseObject.result;
 
         } catch (error) {
-            // --- ¡SOLUCIÓN APLICADA AQUÍ! ---
-            // Verificamos de forma segura el tipo de 'error' antes de usarlo.
             let errorMessage: string;
             if (error instanceof Error) {
-                // Si es un objeto Error, usamos su propiedad .message
                 errorMessage = error.message;
             } else {
-                // Si no, lo convertimos a un string de forma segura.
                 errorMessage = String(error);
             }
             
             console.error('❌ [mcp.service.ts] Fallo en la ejecución de la herramienta:', errorMessage);
-
-            // Reseteamos la promesa para forzar una reconexión la próxima vez.
             connectionPromise = null; 
             
-            // Devolvemos un objeto de error consistente con un mensaje que es un string.
             return { error: errorMessage };
         }
     }
