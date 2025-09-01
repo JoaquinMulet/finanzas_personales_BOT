@@ -48,28 +48,25 @@ class MCPService {
             const responseText = result.content[0]?.text;
             if (!responseText) {
                 console.warn("⚠️ [mcp.service.ts] La respuesta del servidor estaba vacía. Devolviendo objeto de éxito vacío.");
+                // Devolvemos el objeto completo que main.flow.ts espera
                 return { status: "success", data: [] };
             }
 
-            const responseObject = JSON.parse(responseText as string);
-            
             // --- ¡LA SOLUCIÓN FINAL A TODO! ---
-            // El servidor nos devuelve un objeto JSON-RPC completo.
-            // Debemos buscar dentro de la clave 'result' para encontrar nuestros datos.
-            const toolResult = responseObject.result;
+            // Parseamos el string JSON que nos envía directamente el servidor.
+            const toolResult = JSON.parse(responseText as string);
+            
+            // NO necesitamos buscar dentro de 'responseObject.result' porque el servidor no lo envía.
+            // 'toolResult' ya es el objeto que nos interesa: {"status": "...", "data": ...}
 
-            if (toolResult && toolResult.status === 'success') {
-                // Si la operación fue exitosa, devolvemos el objeto de resultado completo
-                // para que el flujo principal pueda inspeccionarlo (data, rows_affected, etc.)
-                return toolResult;
-            } else if (responseObject.error) {
-                // Si la respuesta JSON-RPC contiene un error, lo propagamos.
-                throw new Error(responseObject.error.message);
-            } else {
-                // Fallback por si la estructura es inesperada.
-                console.warn("⚠️ [mcp.service.ts] La estructura de la respuesta JSON-RPC era inesperada:", responseObject);
-                return { error: "Respuesta inesperada del servidor." };
+            if (toolResult && toolResult.error) {
+                // Si el objeto que recibimos contiene un error de negocio, lo propagamos.
+                throw new Error(toolResult.error.message || toolResult.error);
             }
+
+            // Devolvemos el objeto de resultado completo (ej. {"status": ..., "data": ...})
+            // para que main.flow.ts pueda inspeccionarlo.
+            return toolResult;
 
         } catch (error) {
             let errorMessage: string;
@@ -86,6 +83,7 @@ class MCPService {
         }
     }
 }
+
 
 const mcpService = new MCPService();
 
