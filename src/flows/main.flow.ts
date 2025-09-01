@@ -6,7 +6,7 @@ import { ChatCompletionMessageParam } from 'openai/resources';
 import { SYSTEM_PROMPT } from '../config/system_prompt';
 
 const CONVERSATION_EXPIRATION_MS = 30 * 60 * 1000;
-const MAX_RETRY_ATTEMPTS = 2;
+const MAX_RETRY_ATTEMPTS = 7;
 
 export const mainFlow = addKeyword(EVENTS.WELCOME)
     .addAction(async (ctx, { endFlow }) => {

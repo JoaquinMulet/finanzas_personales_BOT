@@ -7,6 +7,7 @@ const client = new MCPClient({ name: "fp-agent-whatsapp-bot", version: "1.0.0" }
 let connectionPromise: Promise<void> | null = null;
 
 async function ensureConnection() {
+
     if (!connectionPromise) {
         console.log('🤝 Conectando al servidor MCP...');
         const serverUrl = env.mcpServerUrl.replace(/\/$/, '');
@@ -27,17 +28,14 @@ class MCPService {
             
             let content = result.structuredContent;
 
-            if (typeof content === 'string') { content = JSON.parse(content); }
-            
-            if (content && content.status === 'success' && content.data !== undefined) {
-                return content.data;
-            } else if (content && content.error) {
-                return { error: content.error };
+            // Si el servidor devuelve un string JSON, lo parseamos.
+            if (typeof content === 'string') {
+                content = JSON.parse(content);
             }
-            // --- ¡MANEJO DE UNDEFINED! ---
-            // Si la llamada fue exitosa pero no hay contenido, devolvemos un array vacío.
-            console.warn("Contenido de respuesta vacío/inesperado. Devolviendo [].");
-            return [];
+            
+            // Devolvemos el objeto completo o un objeto vacío como fallback seguro.
+            return content || {};
+
         } catch (error) {
             console.error('❌ Fallo en mcp-client:', error);
             connectionPromise = null; 
