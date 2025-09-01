@@ -1,156 +1,104 @@
-import { env } from '../config/environment';
-import { randomUUID } from 'crypto';
-import { EventSource } from 'eventsource';
+// src/services/mcp.service.ts (Versión con mcp-client)
 
+import { MCPClient } from 'mcp-client';
+import { env } from '../config/environment';
+
+// La interfaz de estado ya no es necesaria para la lógica de sesión, 
+// pero la mantenemos para que la firma de `executeSql` no cambie.
 export interface SessionState {
     get<T>(key: string): T;
     update(data: Record<string, any>): Promise<any>;
 }
 
-interface JsonRpcResponse {
-  jsonrpc: string;
-  id: string;
-  result?: any;
-  error?: { code: number; message: string; data?: any; };
-}
+// --- Implementación usando la librería mcp-client ---
 
-type PendingRequest = {
-    resolve: (value: any) => void;
-    reject: (reason?: any) => void;
-};
-const pendingRequests = new Map<string, PendingRequest>();
+// 1. Creamos una única instancia del cliente para toda la aplicación.
+const client = new MCPClient({
+  name: "fp-agent-whatsapp-bot",
+  version: "1.0.0",
+});
 
-let eventSource: EventSource | null = null;
-let sessionUrl: string | null = null;
-let connectionPromise: Promise<string> | null = null;
+// 2. Variable para gestionar la promesa de conexión.
+//    Esto asegura que solo intentamos conectar una vez.
+let connectionPromise: Promise<void> | null = null;
 
-// Mapa para rastrear qué sesiones ya han sido inicializadas.
-const initializedSessions = new Set<string>();
-
-function initializePersistentConnection(): Promise<string> {
-    if (connectionPromise) {
-        return connectionPromise;
+/**
+ * Asegura que el cliente MCP esté conectado al servidor.
+ * Si ya hay una conexión, no hace nada. Si no, la establece.
+ */
+async function ensureConnection() {
+    try {
+        // Hacemos ping para ver si la conexión está activa.
+        await client.ping();
+    } catch (error) {
+        // Si el ping falla, asumimos que no estamos conectados y reseteamos la promesa.
+        console.log('Ping fallido, se forzará una nueva conexión.');
+        connectionPromise = null;
     }
 
-    connectionPromise = new Promise((resolve, reject) => {
-        console.log('🤝 Abriendo conexión SSE persistente...');
-        const handshakeUrl = `${env.mcpServerUrl.replace(/\/$/, '')}/sse`;
-        eventSource = new EventSource(handshakeUrl);
-
-        eventSource.addEventListener('endpoint', (event: any) => {
-            sessionUrl = `${env.mcpServerUrl.replace(/\/$/, '')}${event.data}`;
-            console.log(`✅ Conexión persistente establecida. URL de sesión: ${sessionUrl}`);
-            resolve(sessionUrl);
+    if (!connectionPromise) {
+        console.log('🤝 Conectando al servidor MCP usando mcp-client...');
+        
+        const serverUrl = env.mcpServerUrl.replace(/\/$/, '');
+        
+        // Usamos el tipo de conexión 'sse' que descubrimos durante la depuración.
+        connectionPromise = client.connect({
+            type: 'sse',
+            url: `${serverUrl}/sse`
         });
 
-        eventSource.addEventListener('message', (event: any) => {
-            try {
-                const response: JsonRpcResponse = JSON.parse(event.data);
-                const { id, result, error } = response;
-
-                if (id && pendingRequests.has(id)) {
-                    const { resolve, reject } = pendingRequests.get(id)!;
-                    if (error) {
-                        reject(new Error(error.message));
-                    } else {
-                        resolve(result);
-                    }
-                    pendingRequests.delete(id);
-                }
-            } catch (e) {
-                // Ignoramos mensajes que no son JSON, como los pings.
-            }
-        });
-
-        eventSource.onerror = (err) => {
-            console.error('❌ La conexión SSE persistente falló:', err);
-            pendingRequests.forEach(p => p.reject(new Error('La conexión con el servidor MCP se ha perdido.')));
-            pendingRequests.clear();
-            initializedSessions.clear();
-            eventSource?.close();
-            eventSource = null;
-            sessionUrl = null;
+        try {
+            await connectionPromise;
+            console.log('✅ Conexión con el servidor MCP establecida con éxito.');
+        } catch (error) {
+            // Si la conexión falla, reseteamos la promesa para permitir reintentos.
             connectionPromise = null;
-            reject(err);
-        };
-    });
+            // Lanzamos el error para que sea capturado por el llamador.
+            throw error;
+        }
+    }
     return connectionPromise;
 }
 
 class MCPService {
     public async executeTool(toolName: string, toolArgs: any): Promise<any> {
         try {
-            const currentSessionUrl = await initializePersistentConnection();
-
-            // --- ¡PASO CLAVE DE INICIALIZACIÓN! ---
-            // Verificamos si esta URL de sesión ya fue inicializada.
-            if (!initializedSessions.has(currentSessionUrl)) {
-                console.log(`➡️  Enviando 'initialize' para activar la sesión...`);
-                const initPayload = {
-                    jsonrpc: "2.0",
-                    method: "initialize",
-                    params: { capabilities: {}, client: { name: "fp-agent-whatsapp-bot" } },
-                    id: randomUUID()
-                };
-                
-                const initResponse = await fetch(currentSessionUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(initPayload),
-                });
-
-                if (!initResponse.ok) {
-                    throw new Error(`El servidor rechazó la petición de inicialización con status ${initResponse.status}`);
-                }
-                
-                console.log(`✅ Sesión activada con éxito (Status: ${initResponse.status}).`);
-                initializedSessions.add(currentSessionUrl);
-            }
-
-            // --- AHORA, ENVIAMOS LA HERRAMIENTA ---
-            const requestId = randomUUID();
-            const toolPayload = {
-                jsonrpc: "2.0",
-                method: "tools/call",
-                params: { name: toolName, arguments: toolArgs },
-                id: requestId,
-            };
-
-            const responsePromise = new Promise((resolve, reject) => {
-                pendingRequests.set(requestId, { resolve, reject });
-                setTimeout(() => {
-                    if (pendingRequests.has(requestId)) {
-                        pendingRequests.delete(requestId);
-                        reject(new Error(`Timeout: No se recibió respuesta para la petición en 30 segundos.`));
-                    }
-                }, 30000);
-            });
-
-            console.log(`➡️  Enviando 'tools/call' (ID: ${requestId.substring(0,8)})`);
+            // 1. Aseguramos que la conexión esté lista.
+            await ensureConnection();
             
-            const postResponse = await fetch(currentSessionUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(toolPayload),
+            console.log(`➡️  Enviando la herramienta '${toolName}' usando mcp-client...`);
+            
+            // 2. Llamamos a la herramienta. La librería maneja toda la complejidad
+            //    del handshake, inicialización y seguimiento de peticiones.
+            const result = await client.callTool({
+                name: toolName,
+                arguments: toolArgs,
             });
-
-            if (!postResponse.ok) {
-                pendingRequests.delete(requestId);
-                throw new Error(`El servidor rechazó la petición de la herramienta con status ${postResponse.status}`);
-            }
-
-            return await responsePromise;
+            
+            console.log('⬅️  Respuesta de la herramienta recibida con éxito.');
+            
+            // 3. La librería ya parsea el resultado. Devolvemos el contenido estructurado.
+            //    Esto contendrá el objeto JSON que tu servidor devuelve.
+            return result.structuredContent;
 
         } catch (error) {
-            console.error('❌ Fallo en executeTool:', error);
-            const errorMessage = error instanceof Error ? error.message : 'Error desconocido.';
+            console.error('❌ Fallo durante la ejecución de la herramienta con mcp-client:', error);
+            
+            // Si la conexión falla, es importante resetear la promesa para
+            // que el siguiente intento de llamada a la herramienta cree una nueva conexión.
+            connectionPromise = null; 
+            
+            const errorMessage = error instanceof Error ? error.message : 'Error desconocido al ejecutar la herramienta.';
             return { error: errorMessage };
         }
     }
 }
 
+// Creamos una instancia del servicio.
 const mcpService = new MCPService();
 
+// La función exportada se mantiene igual, proporcionando una interfaz limpia para el flujo.
 export const executeSql = (payload: any, state: SessionState) => {
+    // El 'state' ya no se usa aquí, pero lo mantenemos para no romper el contrato con main.flow.ts
     return mcpService.executeTool('run_query_json', payload);
 };
