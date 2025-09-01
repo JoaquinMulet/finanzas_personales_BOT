@@ -42,7 +42,7 @@ export const getAIResponse = async (
         console.log('--- FIN: CONTEXTO COMPLETO ENVIADO A LA IA ---');
         
         const completion = await openAIClient.chat.completions.create({
-            model: 'google/gemini-flash-1.5',
+            model: 'google/gemini-2.5-flash',
             messages: messages,
             response_format: { type: 'json_object' }
         });
