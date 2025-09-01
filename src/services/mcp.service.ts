@@ -90,3 +90,8 @@ const mcpService = new MCPService();
 export const executeSql = (payload: any, state: SessionState) => {
     return mcpService.executeTool('run_query_json', payload);
 };
+
+export const getSystemContext = (state: SessionState) => {
+    // No necesita payload, por eso pasamos un objeto vacío {}.
+    return mcpService.executeTool('get_system_context', {});
+};
