@@ -147,7 +147,7 @@ Esta es la especificación técnica completa y tu única fuente de verdad para c
 | **\`goal_accounts\`**| \`goal_id\`| \`UUID\`| \`FOREIGN KEY (goals.goal_id)\` |
 | | \`account_id\`| \`UUID\`| \`FOREIGN KEY (accounts.account_id)\` |
 
-### Sección 6.2: Entidades de Sistema y Memoria
+### Sección 5.4: Entidades de Sistema y Memoria
 
 | Tabla | Columna | Tipo | Instrucciones |
 | :--- | :--- | :--- | :--- |
@@ -155,6 +155,17 @@ Esta es la especificación técnica completa y tu única fuente de verdad para c
 | | \`user_id\` | \`VARCHAR(255)\` | \`NOT NULL\`, **Usa SIEMPRE el valor 'default_user'** |
 | | \`memory_text\` | \`TEXT\` | \`NOT NULL\`, El hecho o preferencia a recordar |
 | | \`created_at\` | \`TIMESTAMP WITH TIME ZONE\` | Fecha de creación del recuerdo |
+
+### Sección 5.5: Entidades de Reporte y Sistema
+
+| Tabla | Columna | Tipo | Instrucciones |
+| :--- | :--- | :--- | :--- |
+| **\`monthly_category_summary\`**| \`year\` | \`INTEGER\` | (PK) Año del resumen |
+| | \`month\`| \`INTEGER\`| (PK) Mes del resumen (1-12) |
+| | \`category_id\`| \`INTEGER\`| (PK) FK a \`categories.category_id\` |
+| | \`total_amount\`| \`DECIMAL(19, 4)\`| Suma total para esa categoría en ese mes |
+| | \`transaction_count\`| \`INTEGER\`| Conteo de transacciones |
+
 
 ---
 
